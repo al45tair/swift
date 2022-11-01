@@ -42,18 +42,10 @@
 
 #else
 
-#if defined(__ELF__)
-#define SWIFT_REFLECTION_METADATA_ELF_NOTE_MAGIC_STRING "swift_reflection_metadata_magic_string"
-#endif // defined(__ELF__)
-
+#include "swift/ABI/MetadataSections.h"
 #include "swift/shims/Visibility.h"
 #include <cstdint>
 #include <cstddef>
-
-namespace swift {
-struct MetadataSections;
-static constexpr const uintptr_t CurrentSectionMetadataVersion = 2;
-}
 
 struct SectionInfo {
   uint64_t size;
@@ -62,14 +54,19 @@ struct SectionInfo {
 
 /// Called by injected constructors when a dynamic library is loaded.
 ///
+/// \param image A pointer to the base of the loaded image in memory,
+///     or nullptr to indicate that we have no static reference and
+///     would need to dynamically look up the image base.
+///
 /// \param sections A structure describing the metadata sections in the
 ///     newly-loaded image.
 ///
-/// \warning The runtime keeps a reference to \a sections and may mutate it, so
-///   it \em must be mutable and long-lived (that is, statically or dynamically
-///   allocated.) The effect of passing a pointer to a local value is undefined.
+/// \warning The runtime keeps a reference to \a sections, so it \em must be
+///   long-lived (that is, statically or dynamically allocated.) The effect of
+///   passing a pointer to a local value is undefined.
 SWIFT_RUNTIME_EXPORT
-void swift_addNewDSOImage(struct swift::MetadataSections *sections);
+void swift_addNewDSOImage(const void *image,
+                          const swift::MetadataSections *sections);
 
 /// Enumerate all metadata sections in the current process that are known to the
 /// Swift runtime.
@@ -91,12 +88,11 @@ void swift_enumerateAllMetadataSections(
 
 SWIFT_RUNTIME_EXPORT
 const char *
-swift_getMetadataSectionName(const struct swift::MetadataSections *section);
+swift_getMetadataSectionName(const swift::MetadataSections *section);
 
 SWIFT_RUNTIME_EXPORT
-void swift_getMetadataSectionBaseAddress(
-  const struct swift::MetadataSections *section,
-  void const **out_actual, void const **out_expected);
+const void *swift_getMetadataSectionBaseAddress(
+  const swift::MetadataSections *section);
 
 SWIFT_RUNTIME_EXPORT
 size_t swift_getMetadataSectionCount();

@@ -20,7 +20,6 @@
 
 #if defined(__ELF__)
 
-#include "swift/shims/MetadataSections.h"
 #include "ImageInspection.h"
 #include <dlfcn.h>
 

@@ -11,86 +11,112 @@
 //===----------------------------------------------------------------------===//
 
 #include "ImageInspectionCommon.h"
-#include "swift/shims/MetadataSections.h"
+#include "swift/ABI/MetadataSections.h"
 
-#include <cstddef>
-#include <new>
+#undef STR
+#undef _STR
 
-extern "C" const char __dso_handle[];
+#define _STR(x) #x
+#define STR(x) _STR(x)
 
-// Create empty sections to ensure that the start/stop symbols are synthesized
-// by the linker.  Otherwise, we may end up with undefined symbol references as
-// the linker table section was never constructed.
+// Some things differ depending on whether this is 32 or 64-bit
+#if __LP64__
+__asm__("                       \n\
+        .macro AlignNote        \n\
+        .align 8                \n\
+        .endm                   \n\
+                                \n\
+        .macro Offset value     \n\
+        .quad \\value           \n\
+        .endm                   \n\
+                                \n\
+        .macro Version value    \n\
+        .quad \\value           \n\
+        .endm                   \n\
+");
+#else
+__asm__("                       \n\
+        .macro AlignNote        \n\
+        .align 4                \n\
+        .endm                   \n\
+                                \n\
+        .macro Offset value     \n\
+        .long \\value           \n\
+        .endm                   \n\
+                                \n\
+        .macro Version value    \n\
+        .long \\value           \n\
+        .endm                   \n\
+");
+#endif
 
-#define DECLARE_SWIFT_SECTION(name)                                                          \
-  __asm__("\t.section " #name ",\"a\"\n");                                                   \
-  __attribute__((__visibility__("hidden"),__aligned__(1))) extern const char __start_##name; \
-  __attribute__((__visibility__("hidden"),__aligned__(1))) extern const char __stop_##name;
+// Generate the ELF note
+__asm__("                                                               \n\
+        // Declare a section and import its start and end symbols       \n\
+        .macro DeclareSection name                                      \n\
+        .section \\name,\"a\"                                           \n\
+        .global __start_\\name                                          \n\
+        .global __end_\\name                                            \n\
+        .endm                                                           \n\
+                                                                        \n\
+        // Emit a relative pointer                                      \n\
+        .macro RelativePtr symbol                                       \n\
+        Offset \\symbol - . + 1                                         \n\
+        .endm                                                           \n\
+                                                                        \n\
+        // Emit a section descriptor                                    \n\
+        .macro EmitSectionDescriptor name                               \n\
+        RelativePtr __start_\\name                                      \n\
+        RelativePtr __end_\\name                                        \n\
+        .endm                                                           \n\
+                                                                        \n\
+        // Run a specified macro for each of the sections               \n\
+        .macro ForEachSection macro                                     \n\
+        \\macro swift5_protocols                                        \n\
+        \\macro swift5_protocol_conformances                            \n\
+        \\macro swift5_type_metadata                                    \n\
+        \\macro swift5_typeref                                          \n\
+        \\macro swift5_reflstr                                          \n\
+        \\macro swift5_fieldmd                                          \n\
+        \\macro swift5_assocty                                          \n\
+        \\macro swift5_replace                                          \n\
+        \\macro swift5_replac2                                          \n\
+        \\macro swift5_builtin                                          \n\
+        \\macro swift5_capture                                          \n\
+        \\macro swift5_mpenum                                           \n\
+        \\macro swift5_accessible_functions                             \n\
+        .endm                                                           \n\
+                                                                        \n\
+        // Create empty sections to ensure that the start/stop symbols  \n\
+        // are synthesized by the linker.                               \n\
+        ForEachSection DeclareSection                                   \n\
+                                                                        \n\
+        // Now write an ELF note that points at all of the above        \n\
+        .section \".note.swift5_metadata\",\"a\"                        \n\
+        AlignNote                                                       \n\
+        .long 1f - 0f   // n_namesz                                     \n\
+        .long 3f - 2f   // n_descsz                                     \n\
+        .long " STR(SWIFT_NT_SWIFT_METADATA) "                          \n\
+                                                                        \n\
+0:      .asciz \"" SWIFT_NT_SWIFT_NAME "\"                              \n\
+1:                                                                      \n\
+        AlignNote                                                       \n\
+                                                                        \n\
+        .hidden __swift5_metadata                                       \n\
+        .global __swift5_metadata                                       \n\
+__swift5_metadata:                                                      \n\
+                                                                        \n\
+2:      Version " STR(SWIFT_CURRENT_SECTION_METADATA_VERSION) "         \n\
+                                                                        \n\
+        ForEachSection EmitSectionDescriptor                            \n\
+                                                                        \n\
+3:                                                                      \n\
+");
 
-extern "C" {
-DECLARE_SWIFT_SECTION(swift5_protocols)
-DECLARE_SWIFT_SECTION(swift5_protocol_conformances)
-DECLARE_SWIFT_SECTION(swift5_type_metadata)
+extern const swift::MetadataSections __swift5_metadata;
 
-DECLARE_SWIFT_SECTION(swift5_typeref)
-DECLARE_SWIFT_SECTION(swift5_reflstr)
-DECLARE_SWIFT_SECTION(swift5_fieldmd)
-DECLARE_SWIFT_SECTION(swift5_assocty)
-DECLARE_SWIFT_SECTION(swift5_replace)
-DECLARE_SWIFT_SECTION(swift5_replac2)
-DECLARE_SWIFT_SECTION(swift5_builtin)
-DECLARE_SWIFT_SECTION(swift5_capture)
-DECLARE_SWIFT_SECTION(swift5_mpenum)
-DECLARE_SWIFT_SECTION(swift5_accessible_functions)
-}
-
-#undef DECLARE_SWIFT_SECTION
-
-namespace {
-static swift::MetadataSections sections{};
-}
-
+// On image load, notify the Swift runtime
 __attribute__((__constructor__))
 static void swift_image_constructor() {
-#define SWIFT_SECTION_RANGE(name)                                              \
-  { reinterpret_cast<uintptr_t>(&__start_##name),                              \
-    static_cast<uintptr_t>(&__stop_##name - &__start_##name) }
-
-  ::new (&sections) swift::MetadataSections {
-      swift::CurrentSectionMetadataVersion,
-      { __dso_handle },
-
-      nullptr,
-      nullptr,
-
-      SWIFT_SECTION_RANGE(swift5_protocols),
-      SWIFT_SECTION_RANGE(swift5_protocol_conformances),
-      SWIFT_SECTION_RANGE(swift5_type_metadata),
-
-      SWIFT_SECTION_RANGE(swift5_typeref),
-      SWIFT_SECTION_RANGE(swift5_reflstr),
-      SWIFT_SECTION_RANGE(swift5_fieldmd),
-      SWIFT_SECTION_RANGE(swift5_assocty),
-      SWIFT_SECTION_RANGE(swift5_replace),
-      SWIFT_SECTION_RANGE(swift5_replac2),
-      SWIFT_SECTION_RANGE(swift5_builtin),
-      SWIFT_SECTION_RANGE(swift5_capture),
-      SWIFT_SECTION_RANGE(swift5_mpenum),
-      SWIFT_SECTION_RANGE(swift5_accessible_functions),
-  };
-
-#undef SWIFT_SECTION_RANGE
-
-  swift_addNewDSOImage(&sections);
+  swift_addNewDSOImage(nullptr, &__swift5_metadata);
 }
-
-__asm__(".section \".note.swift_reflection_metadata\", \"aw\"");
-
-static __attribute__((__used__))
-__attribute__((__section__(".note.swift_reflection_metadata")))
-__attribute__((__aligned__(1)))
-struct {
-  const char MagicString[sizeof(SWIFT_REFLECTION_METADATA_ELF_NOTE_MAGIC_STRING)];
-  const swift::MetadataSections *Sections;
-} __attribute__((__packed__))
-Note = {SWIFT_REFLECTION_METADATA_ELF_NOTE_MAGIC_STRING, &sections};

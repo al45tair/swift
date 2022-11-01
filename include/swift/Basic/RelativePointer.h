@@ -211,6 +211,10 @@ public:
     return *reinterpret_cast<const ValueTy * const *>(address);
   }
 
+  Offset getOffset() const {
+    return RelativeOffset;
+  }
+
   /// A zero relative offset encodes a null reference.
   bool isNull() const & {
     return RelativeOffset == 0;

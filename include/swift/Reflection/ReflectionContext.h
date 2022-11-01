@@ -27,6 +27,7 @@
 
 #include "swift/ABI/Enum.h"
 #include "swift/ABI/ObjectFile.h"
+#include "swift/ABI/MetadataSections.h"
 #include "swift/Concurrency/Actor.h"
 #include "swift/Remote/MemoryReader.h"
 #include "swift/Remote/MetadataReader.h"
@@ -93,23 +94,50 @@ template <unsigned char ELFClass> struct ELFTraits;
 template <> struct ELFTraits<llvm::ELF::ELFCLASS32> {
   using Header = const struct llvm::ELF::Elf32_Ehdr;
   using Section = const struct llvm::ELF::Elf32_Shdr;
+  using Segment = const struct llvm::ELF::Elf32_Phdr;
+  using Note = const struct llvm::ELF::Elf32_Nhdr;
   using Offset = llvm::ELF::Elf32_Off;
   using Size = llvm::ELF::Elf32_Word;
+  static constexpr unsigned NoteAlign = 4;
   static constexpr unsigned char ELFClass = llvm::ELF::ELFCLASS32;
+
+  using MetadataSections
+    = swift::TargetMetadataSections<swift::MetadataSectionTraits32>;
 };
 
 template <> struct ELFTraits<llvm::ELF::ELFCLASS64> {
   using Header = const struct llvm::ELF::Elf64_Ehdr;
   using Section = const struct llvm::ELF::Elf64_Shdr;
+  using Segment = const struct llvm::ELF::Elf64_Phdr;
+  using Note = const struct llvm::ELF::Elf64_Nhdr;
   using Offset = llvm::ELF::Elf64_Off;
   using Size = llvm::ELF::Elf64_Xword;
+  static constexpr unsigned NoteAlign = 8;
   static constexpr unsigned char ELFClass = llvm::ELF::ELFCLASS64;
+
+  using MetadataSections
+    = swift::TargetMetadataSections<swift::MetadataSectionTraits64>;
 };
 
 } // namespace
 
 namespace swift {
 namespace reflection {
+
+namespace detail {
+
+template <typename T>
+inline unsigned
+alignmentPadding(T *Ptr, unsigned Alignment) {
+  uintptr_t addr = reinterpret_cast<uintptr_t>(Ptr);
+  unsigned mask = Alignment - 1;
+  if ((addr & mask) != 0) {
+    return Alignment - (addr & mask);
+  }
+  return 0;
+}
+
+}
 
 using swift::remote::MemoryReader;
 using swift::remote::RemoteAddress;
@@ -542,6 +570,183 @@ public:
     auto Hdr = reinterpret_cast<const typename T::Header *>(Buf);
     assert(Hdr->getFileClass() == T::ELFClass && "invalid ELF file class");
 
+    // From the header, grab information about the program header table.
+    uint64_t ProgramHdrAddress = Hdr->e_phoff;
+    uint16_t ProgramHdrNumEntries = Hdr->e_phnum;
+    uint16_t ProgramHdrEntrySize = Hdr->e_phentsize;
+
+    if (sizeof(typename T::Segment) > ProgramHdrEntrySize)
+      return false;
+    if (ProgramHdrNumEntries == 0)
+      return false;
+
+    auto readELFSection =
+      [&](uint64_t Start, uint64_t Size, uint64_t Vaddr) -> std::pair<RemoteRef<void>, uint64_t> {
+      auto Base = RemoteAddress(ImageStart.getAddressData() + Start);
+      MemoryReader::ReadBytesResult BytesResult;
+      if (FileBuffer.hasValue()) {
+        if (FileBuffer->allocatedSize() < Start + Size)
+          return {nullptr, 0};
+        auto *Buf = malloc(Size);
+        BytesResult = MemoryReader::ReadBytesResult(
+          Buf, [](const void *ptr) { free(const_cast<void *>(ptr)); });
+        memcpy((void *)Buf,
+               (const void *)((uint64_t)FileBuffer->base() + Start),
+               Size);
+      } else {
+        BytesResult = this->getReader().readBytes(Base, Size);
+      }
+      if (!BytesResult)
+        return {nullptr, 0};
+      auto SecContents =
+        RemoteRef<void>(Base.getAddressData(), BytesResult.get());
+      savedBuffers.push_back(std::move(BytesResult));
+      return {SecContents, Size};
+    };
+
+    // Look through the program headers for PT_NOTE segments.
+    for (unsigned I = 0; I < ProgramHdrNumEntries; ++I) {
+      uint64_t Offset = ProgramHdrAddress + (I * ProgramHdrEntrySize);
+      auto SegBuf = readData(Offset, sizeof(typename T::Segment));
+      if (!SegBuf)
+        return false;
+      const typename T::Segment *SegHdr =
+        reinterpret_cast<const typename T::Segment *>(SegBuf);
+
+      if (SegHdr->p_type != llvm::ELF::PT_NOTE)
+        continue;
+
+      MemoryReader::ReadBytesResult Notes;
+      uint64_t NoteSegmentAddr = SegHdr->p_vaddr;
+      uint64_t NoteSegmentOffset;
+      uint64_t NoteSegmentSize;
+
+      if (FileBuffer.hasValue()) {
+        NoteSegmentOffset = SegHdr->p_offset;
+        NoteSegmentSize = SegHdr->p_filesz;
+
+        auto Ptr = (const void *)((uint64_t)FileBuffer->base() + NoteSegmentOffset);
+        Notes = MemoryReader::ReadBytesResult(Ptr, [](const void *) {});
+      } else {
+        NoteSegmentOffset = SegHdr->p_vaddr;
+        NoteSegmentSize = SegHdr->p_memsz;
+        auto Base = RemoteAddress(ImageStart.getAddressData()
+                                  + NoteSegmentOffset);
+        Notes = this->getReader().readBytes(Base, NoteSegmentSize);
+      }
+
+      // Walk through the note segment examining the notes
+      const uint8_t *NotePtr = reinterpret_cast<const uint8_t *>(Notes.get());
+      const uint8_t *NoteBase = NotePtr;
+      const uint8_t *NoteEnd = NotePtr + NoteSegmentSize;
+
+      while (NotePtr < NoteEnd) {
+        if (NoteEnd - NotePtr < (std::ptrdiff_t)sizeof(typename T::Note))
+          break;
+
+        const typename T::Note *TheNote
+          = reinterpret_cast<typename T::Note *>(NotePtr);
+
+        NotePtr += sizeof(typename T::Note);
+
+        if (NoteEnd - NotePtr < TheNote->n_namesz)
+          break;
+
+        size_t NameLen = TheNote->n_namesz ? TheNote->n_namesz - 1 : 0;
+        llvm::StringRef Name
+          = llvm::StringRef(reinterpret_cast<const char *>(NotePtr),
+                            NameLen);
+        NotePtr += TheNote->n_namesz;
+
+        if (auto padding = detail::alignmentPadding(NotePtr, T::NoteAlign)) {
+          if (NoteEnd - NotePtr < padding)
+            break;
+          NotePtr += padding;
+        }
+
+        if (NoteEnd - NotePtr < TheNote->n_descsz)
+          break;
+
+        const uint8_t *Detail = NotePtr;
+
+        NotePtr += TheNote->n_descsz;
+
+        if (Name == SWIFT_NT_SWIFT_NAME
+            && TheNote->n_type == SWIFT_NT_SWIFT_METADATA
+            && TheNote->n_descsz >= sizeof(typename T::MetadataSections)) {
+          const typename T::MetadataSections *Sections
+            = reinterpret_cast<const typename T::MetadataSections *>(Detail);
+
+          if (Sections->version == SWIFT_CURRENT_SECTION_METADATA_VERSION) {
+            uint64_t SectionsOffset = NoteSegmentOffset
+              + reinterpret_cast<uintptr_t>(Sections)
+              - reinterpret_cast<uintptr_t>(NoteBase);
+
+            auto readSection = [&](const typename T::MetadataSections::SectionRange &section) {
+              uint64_t SecStart = SectionsOffset
+                + reinterpret_cast<uintptr_t>(&section.start)
+                - reinterpret_cast<uintptr_t>(Sections)
+                + static_cast<uint64_t>(static_cast<int64_t>(
+                                          section.start.getUnresolvedOffset()));
+              uint64_t SecEnd = SectionsOffset
+                + reinterpret_cast<uintptr_t>(&section.end)
+                - reinterpret_cast<uintptr_t>(Sections)
+                + static_cast<uint64_t>(static_cast<int64_t>(
+                                          section.end.getUnresolvedOffset()));
+              uint64_t SecSize = SecEnd - SecStart;
+              uint64_t SecAddr = SecStart - NoteSegmentOffset + NoteSegmentAddr;
+              return readELFSection(SecStart, SecSize, SecAddr);
+            };
+
+            auto FieldMdSec = readSection(Sections->swift5_fieldmd);
+            auto AssocTySec = readSection(Sections->swift5_assocty);
+            auto BuiltinTySec = readSection(Sections->swift5_builtin);
+            auto CaptureSec = readSection(Sections->swift5_capture);
+            auto TypeRefMdSec = readSection(Sections->swift5_typeref);
+            auto ReflStrMdSec = readSection(Sections->swift5_reflstr);
+            auto ConformMdSec =
+              readSection(Sections->swift5_protocol_conformances);
+            auto MPEnumMdSec = readSection(Sections->swift5_mpenum);
+
+            // We succeed if at least one of the sections is present in the
+            // ELF executable.
+            if (FieldMdSec.first == nullptr &&
+                AssocTySec.first == nullptr &&
+                BuiltinTySec.first == nullptr &&
+                CaptureSec.first == nullptr &&
+                TypeRefMdSec.first == nullptr &&
+                ReflStrMdSec.first == nullptr &&
+                ConformMdSec.first == nullptr &&
+                MPEnumMdSec.first == nullptr)
+              return false;
+
+            ReflectionInfo info = {{FieldMdSec.first, FieldMdSec.second},
+                                   {AssocTySec.first, AssocTySec.second},
+                                   {BuiltinTySec.first, BuiltinTySec.second},
+                                   {CaptureSec.first, CaptureSec.second},
+                                   {TypeRefMdSec.first, TypeRefMdSec.second},
+                                   {ReflStrMdSec.first, ReflStrMdSec.second},
+                                   {ConformMdSec.first, ConformMdSec.second},
+                                   {MPEnumMdSec.first, MPEnumMdSec.second},
+                                   PotentialModuleNames};
+
+            return this->addReflectionInfo(info);
+          }
+        }
+
+        if (auto padding = detail::alignmentPadding(NotePtr, T::NoteAlign)) {
+          if (NoteEnd - NotePtr < padding)
+            break;
+          NotePtr += padding;
+        }
+      }
+    }
+
+    // If we get here, we didn't find the note; if that's the case, we
+    // can *try* to look for the sections directly, but note that this won't
+    // work if we're inspecting a loaded image (the section headers won't
+    // be mapped in that case).
+
     // From the header, grab information about the section header table.
     uint64_t SectionHdrAddress = Hdr->e_shoff;
     uint16_t SectionHdrNumEntries = Hdr->e_shnum;
@@ -604,33 +809,8 @@ public:
             std::string SecName(Start, StringSize);
             if (SecName != Name)
               continue;
-            RemoteAddress SecStart =
-                RemoteAddress(ImageStart.getAddressData() + Hdr->sh_addr);
-            auto SecSize = Hdr->sh_size;
-            MemoryReader::ReadBytesResult SecBuf;
-            if (FileBuffer.hasValue()) {
-              // sh_offset gives us the offset to the section in the file,
-              // while sh_addr gives us the offset in the process.
-              auto Offset = Hdr->sh_offset;
-              if (FileBuffer->allocatedSize() < Offset + SecSize) {
-                Error = true;
-                break;
-              }
-              auto *Buf = malloc(SecSize);
-              SecBuf = MemoryReader::ReadBytesResult(
-                  Buf, [](const void *ptr) { free(const_cast<void *>(ptr)); });
-              memcpy((void *)Buf,
-                     (const void *)((uint64_t)FileBuffer->base() + Offset),
-                     SecSize);
-            } else {
-              SecBuf = this->getReader().readBytes(SecStart, SecSize);
-            }
-            if (!SecBuf)
-              return {nullptr, 0};
-            auto SecContents =
-                RemoteRef<void>(SecStart.getAddressData(), SecBuf.get());
-            savedBuffers.push_back(std::move(SecBuf));
-            return {SecContents, SecSize};
+
+            return readELFSection(Hdr->sh_offset, Hdr->sh_size, Hdr->sh_addr);
           }
           return {nullptr, 0};
         };

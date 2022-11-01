@@ -18,7 +18,6 @@
 
 #if defined(__wasm__)
 
-#include "swift/shims/MetadataSections.h"
 #include "ImageInspection.h"
 
 using namespace swift;
