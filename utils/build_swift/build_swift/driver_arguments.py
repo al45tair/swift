@@ -202,6 +202,7 @@ def _apply_default_arguments(args):
         args.test_android = False
         args.test_cmark = False
         args.test_swiftpm = False
+        args.test_swift_inspect = False
         args.test_swift_driver = False
         args.test_swiftsyntax = False
         args.test_indexstoredb = False
@@ -688,6 +689,8 @@ def create_argument_parser():
     option(['--swiftevolve'], toggle_true('build_swiftevolve'),
            help='build the swift-evolve tool')
 
+    option(['--swift-backtrace'], toggle_true('build_swift_backtrace'),
+           help='build swift-backtrace')
     option(['--swift-driver'], toggle_true('build_swift_driver'),
            help='build swift-driver')
     option(['--swiftdocc'], toggle_true('build_swiftdocc'),
@@ -721,6 +724,8 @@ def create_argument_parser():
            help='install SourceKitLSP')
     option(['--install-skstresstester'], toggle_true('install_skstresstester'),
            help='install the SourceKit stress tester')
+    option(['--install-swift-backtrace'], toggle_true('install_swift_backtrace'),
+           help='install swift-backtrace')
     option(['--install-swift-driver'], toggle_true('install_swift_driver'),
            help='install new Swift driver')
     option(['--install-swiftevolve'], toggle_true('install_swiftevolve'),
@@ -1202,6 +1207,8 @@ def create_argument_parser():
            help='skip testing cmark')
     option('--skip-test-swiftpm', toggle_false('test_swiftpm'),
            help='skip testing swiftpm')
+    option('--skip-test-swift-backtrace', toggle_false('test_swift_backtrace'),
+           help='skip testing swift-backtrace'),
     option('--skip-test-swift-driver', toggle_false('test_swift_driver'),
            help='skip testing Swift driver')
     option('--skip-test-swiftsyntax', toggle_false('test_swiftsyntax'),
