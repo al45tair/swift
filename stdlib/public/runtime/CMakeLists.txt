@@ -33,6 +33,7 @@ set(swift_runtime_sources
     Backtrace.cpp
     Bincompat.cpp
     Casting.cpp
+    CrashHandlerMacOS.cpp
     CrashReporter.cpp
     Demangle.cpp
     DynamicCast.cpp
