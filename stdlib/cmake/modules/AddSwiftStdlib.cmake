@@ -2510,11 +2510,16 @@ endfunction()
 #
 #   [ARCHITECTURE architecture]
 #     Architecture to build for.
+#
+#   [INSTALL_IN_COMPONENT component]
+#     The Swift installation component that this executable belongs to.
+#     Defaults to never_install.
 function(_add_swift_target_executable_single name)
   set(options)
   set(single_parameter_options
     ARCHITECTURE
-    SDK)
+    SDK
+    INSTALL_IN_COMPONENT)
   set(multiple_parameter_options
     COMPILE_FLAGS
     DEPENDS)
@@ -2559,6 +2564,8 @@ function(_add_swift_target_executable_single name)
     LINK_LIBRARIES_VAR_NAME link_libraries
     LIBRARY_SEARCH_DIRECTORIES_VAR_NAME library_search_directories)
 
+  string(MAKE_C_IDENTIFIER "${name}" module_name)
+
   handle_swift_sources(
       dependency_target
       unused_module_dependency_target
@@ -2568,11 +2575,12 @@ function(_add_swift_target_executable_single name)
       SWIFTEXE_SINGLE_SOURCES SWIFTEXE_SINGLE_EXTERNAL_SOURCES ${name}
       DEPENDS
         ${SWIFTEXE_SINGLE_DEPENDS}
-      MODULE_NAME ${name}
+      MODULE_NAME ${module_name}
       SDK ${SWIFTEXE_SINGLE_SDK}
       ARCHITECTURE ${SWIFTEXE_SINGLE_ARCHITECTURE}
       COMPILE_FLAGS ${SWIFTEXE_SINGLE_COMPILE_FLAGS}
       ENABLE_LTO "${SWIFT_STDLIB_ENABLE_LTO}"
+      INSTALL_IN_COMPONENT "${install_in_component}"
       IS_MAIN)
   add_swift_source_group("${SWIFTEXE_SINGLE_EXTERNAL_SOURCES}")
 
@@ -2645,7 +2653,7 @@ function(add_swift_target_executable name)
   # Parse the arguments we were given.
   cmake_parse_arguments(SWIFTEXE_TARGET
     "EXCLUDE_FROM_ALL;;BUILD_WITH_STDLIB"
-    ""
+    "INSTALL_IN_COMPONENT"
     "DEPENDS;LINK_LIBRARIES"
     ${ARGN})
 
@@ -2655,10 +2663,18 @@ function(add_swift_target_executable name)
     message(SEND_ERROR "${name} is using EXCLUDE_FROM_ALL which is deprecated.")
   endif()
 
+  if("${SWIFTEXE_TARGET_INSTALL_IN_COMPONENT}" STREQUAL "")
+    set(install_in_component "never_install")
+  else()
+    set(install_in_component "${SWIFTEXE_TARGET_INSTALL_IN_COMPONENT}")
+  endif()
+
   # All Swift executables depend on the standard library.
   list(APPEND SWIFTEXE_TARGET_LINK_LIBRARIES swiftCore)
   # All Swift executables depend on the swiftSwiftOnoneSupport library.
   list(APPEND SWIFTEXE_TARGET_DEPENDS swiftSwiftOnoneSupport)
+
+  set(THIN_INPUT_TARGETS)
 
   foreach(sdk ${SWIFT_SDKS})
     foreach(arch ${SWIFT_SDK_${sdk}_ARCHITECTURES})
@@ -2680,7 +2696,8 @@ function(add_swift_target_executable name)
           ${SWIFTEXE_TARGET_SOURCES}
           DEPENDS ${SWIFTEXE_TARGET_DEPENDS_with_suffix}
           SDK "${sdk}"
-          ARCHITECTURE "${arch}")
+          ARCHITECTURE "${arch}"
+          INSTALL_IN_COMPONENT ${install_in_component})
 
       _list_add_string_suffix(
           "${SWIFTEXE_TARGET_LINK_LIBRARIES}"
@@ -2707,8 +2724,101 @@ function(add_swift_target_executable name)
 
         add_custom_command(TARGET ${VARIANT_NAME}
           POST_BUILD
-         COMMAND "codesign" "-f" "-s" "-" "${SWIFT_RUNTIME_OUTPUT_INTDIR}/${VARIANT_NAME}")
-       endif()
+          COMMAND "codesign" "-f" "-s" "-" "${SWIFT_RUNTIME_OUTPUT_INTDIR}/${VARIANT_NAME}")
+      endif()
+
+      list(APPEND THIN_INPUT_TARGETS ${VARIANT_NAME})
     endforeach()
+
+    set(library_subdir "${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
+    if(maccatalyst_build_flavor STREQUAL "ios-like")
+      set(library_subdir "${SWIFT_SDK_MACCATALYST_LIB_SUBDIR}")
+    endif()
+
+    if("${sdk}" STREQUAL "WINDOWS")
+      set(UNIVERSAL_NAME "${SWIFTLIBEXEC_DIR}/${library_subdir}/${name}.exe")
+    else()
+      set(UNIVERSAL_NAME "${SWIFTLIBEXEC_DIR}/${library_subdir}/${name}")
+    endif()
+
+    set(lipo_target "${name}")
+    if("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin")
+      set(codesign_arg CODESIGN)
+    endif()
+    precondition(THIN_INPUT_TARGETS)
+    _add_swift_lipo_target(SDK
+                             ${sdk}
+                           TARGET
+                             ${lipo_target}
+                           OUTPUT
+                             ${UNIVERSAL_NAME}
+                           ${codesign_arg}
+                           ${THIN_INPUT_TARGETS})
+
+    # Determine the subdirectory where this executable will be installed
+    set(resource_dir_sdk_subdir "${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
+    if(maccatalyst_build_flavor STREQUAL "ios-like")
+      set(resource_dir_sdk_subdir "${SWIFT_SDK_MACCATALYST_LIB_SUBDIR}")
+    endif()
+
+    precondition(resource_dir_sdk_subdir)
+
+    if(sdk STREQUAL WINDOWS AND CMAKE_SYSTEM_NAME STREQUAL Windows)
+      add_dependencies(${install_in_component} ${name}-windows-${SWIFT_PRIMARY_VARIANT_ARCH})
+      swift_install_in_component(TARGETS ${name}-windows-${SWIFT_PRIMARY_VARIANT_ARCH}
+                                 RUNTIME
+                                   DESTINATION "bin"
+                                   COMPONENT "${install_in_component}"
+                                 LIBRARY
+                                   DESTINATION "libexec${LLVM_LIBDIR_SUFFIX}/swift/${resource_dir_sdk_subdir}/${SWIFT_PRIMARY_VARIANT_ARCH}"
+                                   COMPONENT "${install_in_component}"
+                                 ARCHIVE
+                                   DESTINATION "libexec${LLVM_LIBDIR_SUFFIX}/swift/${resource_dir_sdk_subdir}/${SWIFT_PRIMARY_VARIANT_ARCH}"
+                                   COMPONENT "${install_in_component}"
+                                 PERMISSIONS
+                                   OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                                   GROUP_READ GROUP_EXECUTE
+                                   WORLD_READ WORLD_EXECUTE)
+    else()
+      add_dependencies(${install_in_component} ${lipo_target})
+
+      set(install_dest "libexec${LLVM_LIBDIR_SUFFIX}/swift/${resource_dir_sdk_subdir}")
+      swift_install_in_component(FILES "${UNIVERSAL_LIBRARY_NAME}"
+                                   DESTINATION ${install_dest}
+                                   COMPONENT "${install_in_component}"
+                                 PERMISSIONS
+                                   OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                                   GROUP_READ GROUP_EXECUTE
+                                   WORLD_READ WORLD_EXECUTE
+                                 "${optional_arg}")
+    endif()
+
+    swift_is_installing_component(
+      "${install_in_component}"
+      is_installing)
+
+    # Add the arch-specific executable targets to the global exports
+    foreach(arch ${SWIFT_SDK_${sdk}_ARCHITECTURES})
+      set(VARIANT_SUFFIX "-${SWIFT_SDK_${sdk}_LIB_SUBDIR}-${arch}")
+      set(VARIANT_NAME "${name}${VARIANT_SUFFIX}")
+
+      if(is_installing)
+        set_property(GLOBAL APPEND
+          PROPERTY SWIFT_EXPORTS ${VARIANT_NAME})
+      else()
+        set_property(GLOBAL APPEND
+          PROPERTY SWIFT_BUILDTREE_EXPORTS ${VARIANT_NAME})
+      endif()
+    endforeach()
+
+    # Add the lipo target to the top-level convenience targets
+    foreach(arch ${SWIFT_SDK_${sdk}_ARCHITECTURES})
+      set(VARIANT_SUFFIX "-${SWIFT_SDK_${sdk}_LIB_SUBDIR}-${arch}")
+      if(TARGET "swift-stdlib${VARIANT_SUFFIX}")
+        add_dependencies("swift-stdlib${VARIANT_SUFFIX}"
+          ${lipo_target})
+      endif()
+    endforeach()
+
   endforeach()
 endfunction()
