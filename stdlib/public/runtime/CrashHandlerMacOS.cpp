@@ -10,11 +10,20 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// The macOS crash handler implementation
+// The macOS crash handler implementation.
+//
+// We use signal handling rather than trying to use Mach exceptions here,
+// because the latter would entail running a separate Mach server thread, and
+// creates a much greater risk of interfering with the system wide Crash
+// Reporter, which is a no-no.
 //
 //===----------------------------------------------------------------------===//
 
 #ifdef __APPLE__
+
+#include <TargetConditionals.h>
+
+#if TARGET_OS_OSX
 
 #include <mach/mach.h>
 #include <mach/task.h>
@@ -23,6 +32,8 @@
 #include <sys/mman.h>
 #include <sys/ucontext.h>
 #include <sys/wait.h>
+
+#include <os/lock.h>
 
 #include <errno.h>
 #include <signal.h>
@@ -39,9 +50,19 @@ using namespace swift::runtime::backtrace;
 namespace {
 
 void handle_fatal_signal(int signum, siginfo_t *pinfo, void *uctx);
-int run_backtracer(void);
+bool run_backtracer(void);
 
 CrashInfo crashInfo;
+
+const int signalsToHandle[] = {
+  SIGQUIT,
+  SIGABRT,
+  SIGBUS,
+  SIGFPE,
+  SIGILL,
+  SIGSEGV,
+  SIGTRAP
+};
 
 } // namespace
 
@@ -49,7 +70,7 @@ namespace swift {
 namespace runtime {
 namespace backtrace {
 
-SWIFT_RUNTIME_STDLIB_INTERNAL void
+SWIFT_RUNTIME_STDLIB_INTERNAL int
 _swift_installCrashHandler()
 {
   stack_t ss;
@@ -60,24 +81,24 @@ _swift_installCrashHandler()
   ss.ss_sp = mmap(0, ss.ss_size, PROT_READ | PROT_WRITE,
                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (ss.ss_sp == MAP_FAILED)
-    return -1;
+    return errno;
 
   // Now register signal handlers
   struct sigaction sa;
 
   sigfillset(&sa.sa_mask);
-  for (unsigned n = 0; n < lengthof(to_handle); ++n) {
-    sigdelset(&sa.sa_mask, to_handle[n]);
+  for (unsigned n = 0; n < lengthof(signalsToHandle); ++n) {
+    sigdelset(&sa.sa_mask, signalsToHandle[n]);
   }
 
   sa.sa_handler = NULL;
 
-  for (unsigned n = 0; n < lengthof(to_handle); ++n) {
+  for (unsigned n = 0; n < lengthof(signalsToHandle); ++n) {
     sa.sa_flags = SA_ONSTACK | SA_SIGINFO | SA_NODEFER;
     sa.sa_sigaction = handle_fatal_signal;
 
-    if (sigaction(to_handle[n], &sa, NULL) < 0)
-      return -1;
+    if (sigaction(signalsToHandle[n], &sa, NULL) < 0)
+      return errno;
   }
 
   return 0;
@@ -96,11 +117,11 @@ handle_fatal_signal(int signum,
 {
   int old_err = errno;
 
-  /* Remove our signal handlers; crashes should kill us here */
-  for (unsigned n = 0; n < lengthof(to_handle); ++n)
-    signal(to_handle[n], SIG_DFL);
+  // Remove our signal handlers; crashes should kill us here
+  for (unsigned n = 0; n < lengthof(signalsToHandle); ++n)
+    signal(signalsToHandle[n], SIG_DFL);
 
-  /* Get our thread identifier */
+  // Get our thread identifier
   thread_identifier_info_data_t ident_info;
   mach_msg_type_number_t ident_size = THREAD_IDENTIFIER_INFO_COUNT;
 
@@ -111,7 +132,7 @@ handle_fatal_signal(int signum,
   if (ret != KERN_SUCCESS)
     return;
 
-  /* Fill in crash info */
+  // Fill in crash info
   crashInfo.crashing_thread = ident_info.thread_id;
   crashInfo.signal = signum;
   crashInfo.fault_address = (uint64_t)pinfo->si_addr;
@@ -121,14 +142,14 @@ handle_fatal_signal(int signum,
      to try to suspend other threads from here. */
   run_backtracer();
 
-  /* Restore errno and exit (to crash) */
+  // Restore errno and exit (to crash)
   errno = old_err;
 }
 
 char addr_buf[18];
 char timeout_buf[22];
 char level_buf[22];
-char backtracer_argv[] = {
+const char *backtracer_argv[] = {
   "swift-backtrace",            // 0
   "--unwind",                   // 1
   "DWARF",                      // 2
@@ -150,7 +171,7 @@ char backtracer_argv[] = {
 // We can't call sprintf() here because we're in a signal handler,
 // so we need to be async-signal-safe.
 void
-format_address(uint64_t addr, char buffer[18])
+format_address(uintptr_t addr, char buffer[18])
 {
   char *ptr = buffer + 18;
   *--ptr = '\0';
@@ -160,7 +181,22 @@ format_address(uint64_t addr, char buffer[18])
       digit += 'a' - '0' - 10;
     *--ptr = digit;
     addr >>= 4;
+    if (!addr)
+      break;
   }
+
+  // Left-justify in the buffer
+  if (ptr > buffer) {
+    char *pt2 = buffer;
+    while (*ptr)
+      *pt2++ = *ptr++;
+    *pt2++ = '\0';
+  }
+}
+void
+format_address(const void *ptr, char buffer[18])
+{
+  format_address(reinterpret_cast<uintptr_t>(ptr), buffer);
 }
 
 // See above; we can't use sprintf() here.
@@ -175,6 +211,14 @@ format_unsigned(unsigned u, char buffer[22])
     u /= 10;
     if (!u)
       break;
+  }
+
+  // Left-justify in the buffer
+  if (ptr > buffer) {
+    char *pt2 = buffer;
+    while (*ptr)
+      *pt2++ = *ptr++;
+    *pt2++ = '\0';
   }
 }
 
@@ -212,6 +256,8 @@ run_backtracer()
 }
 
 } // namespace
+
+#endif // TARGET_OS_OSX
 
 #endif // __APPLE__
 

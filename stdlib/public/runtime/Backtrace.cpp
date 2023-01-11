@@ -27,6 +27,7 @@
 #include <windows.h>
 #else
 #include <sys/mman.h>
+#include <spawn.h>
 #include <unistd.h>
 #endif
 
@@ -52,6 +53,9 @@ SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings = {
   Off,
 #endif
 
+  // symbolicate
+  true,
+  
   // interactive
 #if TARGET_OS_OSX || defined(__linux__) || defined(_WIN32)
   TTY,
@@ -93,11 +97,18 @@ SWIFT_ALLOWED_RUNTIME_GLOBAL_CTOR_END
 
 #if SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
 
+// We need swiftBacktracePath to be aligned on a page boundary
+#if defined(__APPLE__) && defined(__arm64__)
+#define SWIFT_BACKTRACE_ALIGN 16384
+#else
+#define SWIFT_BACKTRACE_ALIGN 4096
+#endif
+
 #if _WIN32
 #pragma section(SWIFT_BACKTRACE_SECTION, read, write)
 __declspec(allocate(SWIFT_BACKTRACE_SECTION)) WCHAR swiftBacktracePath[SWIFT_BACKTRACE_BUFFER_SIZE];
 #elif defined(__linux__) || TARGET_OS_OSX
-char swiftBacktracePath[SWIFT_BACKTRACE_BUFFER_SIZE] __attribute__((__section__(SWIFT_BACKTRACE_SECTION)));
+char swiftBacktracePath[SWIFT_BACKTRACE_BUFFER_SIZE] __attribute__((section(SWIFT_BACKTRACE_SECTION), aligned(SWIFT_BACKTRACE_ALIGN)));
 #endif
 
 #endif // SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
@@ -125,7 +136,7 @@ bool isStdinATty()
 #endif
 }
 
-char *emptyEnv[] = { NULL };
+const char * const emptyEnv[] = { NULL };
 
 } // namespace
 
@@ -138,7 +149,7 @@ BacktraceInitializer::BacktraceInitializer() {
 #if !SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
   if (_swift_backtraceSettings.enabled) {
     swift::warning(0,
-                   "backtrace-on-crash is not supported on this platform.");
+                   "backtrace-on-crash is not supported on this platform.\n");
     _swift_backtraceSettings.enabled = Off;
   }
 #else
@@ -158,7 +169,8 @@ BacktraceInitializer::BacktraceInitializer() {
 
     if (!_swift_backtraceSettings.swiftBacktracePath) {
       swift::warning(0,
-                     "unable to locate swift-backtrace; disabling backtracing.");
+                     "unable to locate swift-backtrace; "
+                     "disabling backtracing.\n");
       _swift_backtraceSettings.enabled = Off;
     }
   }
@@ -174,7 +186,8 @@ BacktraceInitializer::BacktraceInitializer() {
     switch (_swift_backtraceSettings.algorithm) {
     case DWARF:
       swift::warning(0,
-                     "DWARF unwinding is not supported on this platform.");
+                     "DWARF unwinding is not supported on this platform.\n");
+      SWIFT_FALLTHROUGH;
     case Auto:
       _swift_backtraceSettings.algorithm = SEH;
       break;
@@ -189,7 +202,7 @@ BacktraceInitializer::BacktraceInitializer() {
     if (!len) {
       swift::warning(0,
                      "unable to convert path to swift-backtrace: %08lx; "
-                     "disabling backtracing.",
+                     "disabling backtracing.\n",
                      ::GetLastError());
       _swift_backtraceSettings.enabled = Off;
     } else if (!VirtualProtect(swiftBacktracePath,
@@ -198,7 +211,7 @@ BacktraceInitializer::BacktraceInitializer() {
                                NULL)) {
       swift::warning(0,
                      "unable to protect path to swift-backtrace: %08lx; "
-                     "disabling backtracing.",
+                     "disabling backtracing.\n",
                      ::GetLastError());
       _swift_backtraceSettings.enabled = Off;
     }
@@ -206,7 +219,8 @@ BacktraceInitializer::BacktraceInitializer() {
     switch (_swift_backtraceSettings.algorithm) {
     case SEH:
       swift::warning(0,
-                     "SEH unwinding is not supported on this platform.");
+                     "SEH unwinding is not supported on this platform.\n");
+      SWIFT_FALLTHROUGH;
     case Auto:
       _swift_backtraceSettings.algorithm = DWARF;
       break;
@@ -218,7 +232,7 @@ BacktraceInitializer::BacktraceInitializer() {
     if (len > SWIFT_BACKTRACE_BUFFER_SIZE - 1) {
       swift::warning(0,
                      "path to swift-backtrace is too long; "
-                     "disabling backtracing.");
+                     "disabling backtracing.\n");
       _swift_backtraceSettings.enabled = Off;
     } else {
       memcpy(swiftBacktracePath,
@@ -229,8 +243,9 @@ BacktraceInitializer::BacktraceInitializer() {
                    SWIFT_BACKTRACE_BUFFER_SIZE,
                    PROT_READ) < 0) {
         swift::warning(0,
-                       "unable to protect path to swift-backtrace: %d; "
-                       "disabling backtracing.",
+                       "unable to protect path to swift-backtrace at %p: %d; "
+                       "disabling backtracing.\n",
+                       swiftBacktracePath,
                        errno);
         _swift_backtraceSettings.enabled = Off;
       }
@@ -239,7 +254,12 @@ BacktraceInitializer::BacktraceInitializer() {
   }
 
   if (_swift_backtraceSettings.enabled) {
-    _swift_installCrashHandler();
+    ErrorCode err = _swift_installCrashHandler();
+    if (err != 0) {
+      swift::warning(0,
+                     "crash handler installation failed; "
+                     "disabling backtracing.\n");
+    }
   }
 #endif
 }
@@ -251,7 +271,10 @@ parseOnOffTty(llvm::StringRef value)
 {
   if (value.equals_insensitive("on")
       || value.equals_insensitive("true")
-      || value.equals_insensitive("yes"))
+      || value.equals_insensitive("yes")
+      || value.equals_insensitive("y")
+      || value.equals_insensitive("t")
+      || value.equals_insensitive("1"))
     return On;
   if (value.equals_insensitive("tty")
       || value.equals_insensitive("auto"))
@@ -264,7 +287,10 @@ parseBoolean(llvm::StringRef value)
 {
   return (value.equals_insensitive("on")
           || value.equals_insensitive("true")
-          || value.equals_insensitive("yes"));
+          || value.equals_insensitive("yes")
+          || value.equals_insensitive("y")
+          || value.equals_insensitive("t")
+          || value.equals_insensitive("1"));
 }
 
 void
@@ -326,7 +352,7 @@ _swift_processBacktracingSetting(llvm::StringRef key,
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("level")) {
-    if (!value.getAsInteger(0, _swift_backtraceSettings.verbosity)) {
+    if (!value.getAsInteger(0, _swift_backtraceSettings.level)) {
       swift::warning(0,
                      "bad backtracing level '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
@@ -369,12 +395,13 @@ _swift_parseBacktracingSettings(const char *settings)
     case ScanningValue:
       if (ch == ',') {
         valueEnd = ptr - 1;
-        key = ptr;
-        state = ScanningKey;
 
         _swift_processBacktracingSetting(llvm::StringRef(key, keyEnd - key),
                                          llvm::StringRef(value,
                                                          valueEnd - value));
+
+        key = ptr;
+        state = ScanningKey;
         continue;
       }
       break;
@@ -395,13 +422,21 @@ namespace swift {
 namespace runtime {
 namespace backtrace {
 
+// N.B. THIS FUNCTION MUST BE SAFE TO USE FROM A CRASH HANDLER.  On Linux
+// and macOS, that means it must be async-signal-safe.  On Windows, there
+// isn't an equivalent notion but a similar restriction applies.
 SWIFT_RUNTIME_STDLIB_INTERNAL bool
-_swift_spawnBacktracer(const ArgChar **argv)
+_swift_spawnBacktracer(const ArgChar * const *argv)
 {
 #if TARGET_OS_OSX
   pid_t child;
+
+  // SUSv3 says argv and envp are "completely constant" and that the reason
+  // posix_spawn() et al use char * const * is for compatibility.
+
   int ret = posix_spawn(&child, swiftBacktracePath, NULL, NULL,
-                        argv, emptyEnv);
+                        const_cast<char * const *>(argv),
+                        const_cast<char * const *>(emptyEnv));
   if (ret < 0)
     return false;
 

@@ -27,15 +27,17 @@ namespace runtime {
 namespace backtrace {
 #endif
 
-SWIFT_RUNTIME_STDLIB_INTERNAL void _swift_installCrashHandler();
-
 #ifdef _WIN32
 typedef wchar_t ArgChar;
+typedef DWORD ErrorCode;
 #else
 typedef char ArgChar;
+typedef int ErrorCode;
 #endif
 
-SWIFT_RUNTIME_STDLIB_INTERNAL bool _swift_spawnBacktracer(const ArgChar **argv);
+SWIFT_RUNTIME_STDLIB_INTERNAL ErrorCode _swift_installCrashHandler();
+
+SWIFT_RUNTIME_STDLIB_INTERNAL bool _swift_spawnBacktracer(const ArgChar * const *argv);
 
 struct CrashInfo {
   uint64_t crashing_thread;
