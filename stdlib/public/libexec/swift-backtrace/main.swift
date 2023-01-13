@@ -184,5 +184,7 @@ Generate a backtrace for the parent process.
       exit(1)
     }
 
+    print("SWIFT BACKTRACE INVOKED!")
+
   }
 }

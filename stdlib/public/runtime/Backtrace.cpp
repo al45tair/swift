@@ -35,6 +35,13 @@
 #include <cstring>
 #include <cerrno>
 
+#define DEBUG_BACKTRACING_PASS_THROUGH_DYLD_LIBRARY_PATH 1
+#define DEBUG_BACKTRACING_SETTINGS                       1
+
+#if DEBUG_BACKTRACING_PASS_THROUGH_DYLD_LIBRARY_PATH
+#warning ***WARNING*** THIS SETTING IS INSECURE.  IT SHOULD NOT BE ENABLED IN PRODUCTION
+#endif
+
 using namespace swift::runtime::backtrace;
 
 namespace swift {
@@ -137,6 +144,29 @@ bool isStdinATty()
 }
 
 const char * const emptyEnv[] = { NULL };
+
+#if DEBUG_BACKTRACING_SETTINGS
+const char *algorithmToString(UnwindAlgorithm algorithm) {
+  switch (algorithm) {
+  case Auto: return "Auto";
+  case Fast: return "Fast";
+  case DWARF: return "DWARF";
+  case SEH: return "SEH";
+  }
+}
+
+const char *onOffTtyToString(OnOffTty oot) {
+  switch (oot) {
+  case On: return "On";
+  case Off: return "Off";
+  case TTY: return "TTY";
+  }
+}
+
+const char *boolToString(bool b) {
+  return b ? "true" : "false";
+}
+#endif
 
 } // namespace
 
@@ -262,6 +292,27 @@ BacktraceInitializer::BacktraceInitializer() {
     }
   }
 #endif
+
+#if DEBUG_BACKTRACING_SETTINGS
+  printf("\nBACKTRACING SETTINGS\n"
+         "\n"
+         "algorithm: %s\n"
+         "enabled: %s\n"
+         "symbolicate: %s\n"
+         "interactive: %s\n"
+         "color: %s\n"
+         "timeout: %u\n"
+         "level: %u\n"
+         "swiftBacktracePath: %s\n\n",
+         algorithmToString(_swift_backtraceSettings.algorithm),
+         onOffTtyToString(_swift_backtraceSettings.enabled),
+         boolToString(_swift_backtraceSettings.symbolicate),
+         onOffTtyToString(_swift_backtraceSettings.interactive),
+         onOffTtyToString(_swift_backtraceSettings.color),
+         _swift_backtraceSettings.timeout,
+         _swift_backtraceSettings.level,
+         swiftBacktracePath);
+#endif
 }
 
 namespace {
@@ -365,6 +416,10 @@ _swift_processBacktracingSetting(llvm::StringRef key,
 
     std::free(const_cast<char *>(_swift_backtraceSettings.swiftBacktracePath));
     _swift_backtraceSettings.swiftBacktracePath = path;
+  } else {
+    swift::warning(0,
+                   "unknown backtracing setting '%.*s'\n",
+                   static_cast<int>(key.size()), key.data());
   }
 }
 
@@ -430,13 +485,23 @@ _swift_spawnBacktracer(const ArgChar * const *argv)
 {
 #if TARGET_OS_OSX
   pid_t child;
+  const char * const *envp = emptyEnv;
+
+  #if DEBUG_BACKTRACING_PASS_THROUGH_DYLD_LIBRARY_PATH
+  const char *dyldEnv[] = {
+    getenv("DYLD_LIBRARY_PATH"),
+    NULL
+  };
+
+  envp = dyldEnv;
+  #endif
 
   // SUSv3 says argv and envp are "completely constant" and that the reason
   // posix_spawn() et al use char * const * is for compatibility.
 
   int ret = posix_spawn(&child, swiftBacktracePath, NULL, NULL,
                         const_cast<char * const *>(argv),
-                        const_cast<char * const *>(emptyEnv));
+                        const_cast<char * const *>(envp));
   if (ret < 0)
     return false;
 
