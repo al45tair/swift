@@ -236,6 +236,7 @@ run_backtracer()
   switch (_swift_backtraceSettings.algorithm) {
   case Fast:
     backtracer_argv[2] = "fast";
+    break;
   default:
     backtracer_argv[2] = "DWARF";
     break;
