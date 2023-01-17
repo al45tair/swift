@@ -487,6 +487,9 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
   Opts.DisableImplicitStringProcessingModuleImport |=
     Args.hasArg(OPT_disable_implicit_string_processing_module_import);
 
+  Opts.DisableImplicitBacktracingModuleImport |=
+    Args.hasArg(OPT_disable_implicit_backtracing_module_import);
+
   if (Args.hasArg(OPT_enable_experimental_async_top_level))
     Diags.diagnose(SourceLoc(), diag::warn_flag_deprecated,
                    "-enable-experimental-async-top-level");

@@ -113,6 +113,10 @@ def disable_implicit_string_processing_module_import : Flag<["-"],
     "disable-implicit-string-processing-module-import">,
   HelpText<"Disable implicit import of the _StringProcessing module">;
 
+def disable_implicit_backtracing_module_import : Flag<["-"],
+    "disable-implicit-backtracing-module-import">,
+  HelpText<"Disable implicit import of the _Backtracing module">;
+
 def end_pos : Separate<["-"], "end-pos">, HelpText<"line:col">;
 def end_pos_EQ : Joined<["-"], "end-pos=">, Alias<end_pos>;
 
