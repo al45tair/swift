@@ -18,6 +18,8 @@ import Glibc
 import MSVCRT
 #endif
 
+@_spi(Internal) import _Backtracing
+
 @main
 internal struct SwiftBacktrace {
   enum UnwindAlgorithm {
