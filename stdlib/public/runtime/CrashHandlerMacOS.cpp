@@ -52,7 +52,7 @@ namespace {
 void handle_fatal_signal(int signum, siginfo_t *pinfo, void *uctx);
 bool run_backtracer(void);
 
-CrashInfo crashInfo;
+swift::CrashInfo crashInfo;
 
 const int signalsToHandle[] = {
   SIGQUIT,

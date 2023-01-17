@@ -496,6 +496,15 @@ swift_auth_code(T value, unsigned extra) {
 #  define SWIFT_BACKTRACE_ON_CRASH_SUPPORTED 0
 #endif
 
+/// What is the system page size?
+#if defined(__APPLE__) && defined(__arm64__)
+  // Apple Silicon systems use s 16KB page size
+  #define SWIFT_PAGE_SIZE 16384
+#else
+  // Everything else uses 4KB pages
+  #define SWIFT_PAGE_SIZE 4096
+#endif
+
 #endif
 
 #endif // SWIFT_RUNTIME_CONFIG_H

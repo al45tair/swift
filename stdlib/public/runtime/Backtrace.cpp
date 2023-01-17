@@ -14,6 +14,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <type_traits>
+
 #include "llvm/ADT/StringRef.h"
 
 #include "swift/Runtime/Config.h"
@@ -35,11 +37,10 @@
 #include <cstring>
 #include <cerrno>
 
-#define DEBUG_BACKTRACING_PASS_THROUGH_DYLD_LIBRARY_PATH 1
-#define DEBUG_BACKTRACING_SETTINGS                       1
+#define DEBUG_BACKTRACING_SETTINGS 1
 
-#if DEBUG_BACKTRACING_PASS_THROUGH_DYLD_LIBRARY_PATH
-#warning ***WARNING*** THIS SETTING IS INSECURE.  IT SHOULD NOT BE ENABLED IN PRODUCTION
+#ifndef lengthof
+#define lengthof(x) (sizeof(x) / sizeof(x[0]))
 #endif
 
 using namespace swift::runtime::backtrace;
@@ -62,7 +63,7 @@ SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings = {
 
   // symbolicate
   true,
-  
+
   // interactive
 #if TARGET_OS_OSX || defined(__linux__) || defined(_WIN32)
   TTY,
@@ -100,28 +101,39 @@ BacktraceInitializer backtraceInitializer;
 
 SWIFT_ALLOWED_RUNTIME_GLOBAL_CTOR_END
 
-#define SWIFT_BACKTRACE_BUFFER_SIZE     8192
-
 #if SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
 
-// We need swiftBacktracePath to be aligned on a page boundary
-#if defined(__APPLE__) && defined(__arm64__)
-#define SWIFT_BACKTRACE_ALIGN 16384
-#else
-#define SWIFT_BACKTRACE_ALIGN 4096
-#endif
+// We need swiftBacktracePath to be aligned on a page boundary, and it also
+// needs to be a multiple of the system page size.
+#define SWIFT_BACKTRACE_BUFFER_SIZE 16384
+
+static_assert((SWIFT_BACKTRACE_BUFFER_SIZE % SWIFT_PAGE_SIZE) == 0,
+              "The backtrace path buffer must be a multiple of the system "
+              "page size.  If it isn't, you'll get weird crashes in other "
+              "code because we'll protect more than just the buffer.");
+
+// The same goes for swiftBacktraceEnvironment
+#define SWIFT_BACKTRACE_ENVIRONMENT_SIZE 32768
+
+static_assert((SWIFT_BACKTRACE_ENVIRONMENT_SIZE % SWIFT_PAGE_SIZE) == 0,
+              "The environment buffer must be a multiple of the system "
+              "page size.  If it isn't, you'll get weird crashes in other "
+              "code because we'll protect more than just the buffer.");
 
 #if _WIN32
 #pragma section(SWIFT_BACKTRACE_SECTION, read, write)
 __declspec(allocate(SWIFT_BACKTRACE_SECTION)) WCHAR swiftBacktracePath[SWIFT_BACKTRACE_BUFFER_SIZE];
+__declspec(allocate(SWIFT_BACKTRACE_SECTION)) CHAR swiftBacktraceEnv[SWIFT_BACKTRACE_ENVIRONMENT_SIZE];
 #elif defined(__linux__) || TARGET_OS_OSX
-char swiftBacktracePath[SWIFT_BACKTRACE_BUFFER_SIZE] __attribute__((section(SWIFT_BACKTRACE_SECTION), aligned(SWIFT_BACKTRACE_ALIGN)));
+char swiftBacktracePath[SWIFT_BACKTRACE_BUFFER_SIZE] __attribute__((section(SWIFT_BACKTRACE_SECTION), aligned(SWIFT_PAGE_SIZE)));
+char swiftBacktraceEnv[SWIFT_BACKTRACE_ENVIRONMENT_SIZE] __attribute__((section(SWIFT_BACKTRACE_SECTION), aligned(SWIFT_PAGE_SIZE)));
 #endif
 
 #endif // SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
 
 void _swift_processBacktracingSetting(llvm::StringRef key, llvm::StringRef value);
 void _swift_parseBacktracingSettings(const char *);
+void _swift_backtraceSetupEnvironment();
 
 bool isStdoutATty()
 {
@@ -142,8 +154,6 @@ bool isStdinATty()
   return GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwMode);
 #endif
 }
-
-const char * const emptyEnv[] = { NULL };
 
 #if DEBUG_BACKTRACING_SETTINGS
 const char *algorithmToString(UnwindAlgorithm algorithm) {
@@ -245,6 +255,19 @@ BacktraceInitializer::BacktraceInitializer() {
                      ::GetLastError());
       _swift_backtraceSettings.enabled = Off;
     }
+
+    _swift_backtraceSetupEnvironment();
+
+    if (!VirtualProtect(swiftBacktraceEnv,
+                        sizeof(swiftBacktraceEnv),
+                        PAGE_READONLY,
+                        NULL)) {
+      swift::warning(0,
+                     "unable to protect environment for swift-backtrace: %08lx; "
+                     "disabling backtracing.\n",
+                     ::GetLastError());
+      _swift_backtraceSettings.enabled = Off;
+    }
 #else
     switch (_swift_backtraceSettings.algorithm) {
     case SEH:
@@ -270,7 +293,7 @@ BacktraceInitializer::BacktraceInitializer() {
              len + 1);
 
       if (mprotect(swiftBacktracePath,
-                   SWIFT_BACKTRACE_BUFFER_SIZE,
+                   sizeof(swiftBacktracePath),
                    PROT_READ) < 0) {
         swift::warning(0,
                        "unable to protect path to swift-backtrace at %p: %d; "
@@ -279,6 +302,19 @@ BacktraceInitializer::BacktraceInitializer() {
                        errno);
         _swift_backtraceSettings.enabled = Off;
       }
+    }
+
+    _swift_backtraceSetupEnvironment();
+
+    if (mprotect(swiftBacktraceEnv,
+                 sizeof(swiftBacktraceEnv),
+                 PROT_READ) < 0) {
+        swift::warning(0,
+                       "unable to protect environment for swift-backtrace "
+                       "at %p: %d; disabling backtracing.\n",
+                       swiftBacktraceEnv,
+                       errno);
+        _swift_backtraceSettings.enabled = Off;
     }
 #endif
   }
@@ -303,7 +339,7 @@ BacktraceInitializer::BacktraceInitializer() {
          "color: %s\n"
          "timeout: %u\n"
          "level: %u\n"
-         "swiftBacktracePath: %s\n\n",
+         "swiftBacktracePath: %s\n",
          algorithmToString(_swift_backtraceSettings.algorithm),
          onOffTtyToString(_swift_backtraceSettings.enabled),
          boolToString(_swift_backtraceSettings.symbolicate),
@@ -312,6 +348,16 @@ BacktraceInitializer::BacktraceInitializer() {
          _swift_backtraceSettings.timeout,
          _swift_backtraceSettings.level,
          swiftBacktracePath);
+
+  printf("\nBACKTRACING ENV\n");
+
+  const char *ptr = swiftBacktraceEnv;
+  while (*ptr) {
+    size_t len = std::strlen(ptr);
+    printf("%s\n", ptr);
+    ptr += len + 1;
+  }
+  printf("\n");
 #endif
 }
 
@@ -471,6 +517,50 @@ _swift_parseBacktracingSettings(const char *settings)
   }
 }
 
+// These are the only environment variables that are passed through to
+// the swift-backtrace process.  They're copied at program start, and then
+// write protected so they can't be manipulated by an attacker using a buffer
+// overrun.
+const char * const environmentVarsToPassThrough[] = {
+  "LD_LIBRARY_PATH",
+  "DYLD_LIBRARY_PATH",
+  "DYLD_FRAMEWORK_PATH",
+  "PATH",
+};
+
+#define BACKTRACE_MAX_ENV_VARS lengthof(environmentVarsToPassThrough)
+
+void
+_swift_backtraceSetupEnvironment()
+{
+  size_t remaining = sizeof(swiftBacktraceEnv);
+  char *penv = swiftBacktraceEnv;
+
+  std::memset(swiftBacktraceEnv, 0, sizeof(swiftBacktraceEnv));
+
+  for (unsigned n = 0; n < BACKTRACE_MAX_ENV_VARS; ++n) {
+    const char *name = environmentVarsToPassThrough[n];
+    const char *value = getenv(name);
+    if (!value)
+      continue;
+
+    size_t nameLen = std::strlen(name);
+    size_t valueLen = std::strlen(value);
+    size_t totalLen = nameLen + 1 + valueLen + 1;
+
+    if (remaining > totalLen) {
+      std::memcpy(penv, name, nameLen);
+      penv += nameLen;
+      *penv++ = '=';
+      std::memcpy(penv, value, valueLen);
+      penv += valueLen;
+      *penv++ = 0;
+    }
+  }
+
+  *penv = 0;
+}
+
 } // namespace
 
 namespace swift {
@@ -485,23 +575,23 @@ _swift_spawnBacktracer(const ArgChar * const *argv)
 {
 #if TARGET_OS_OSX
   pid_t child;
-  const char * const *envp = emptyEnv;
+  const char *env[BACKTRACE_MAX_ENV_VARS + 1];
 
-  #if DEBUG_BACKTRACING_PASS_THROUGH_DYLD_LIBRARY_PATH
-  const char *dyldEnv[] = {
-    getenv("DYLD_LIBRARY_PATH"),
-    NULL
+  // Set-up the environment array
+  const char *ptr = swiftBacktraceEnv;
+  unsigned nEnv = 0;
+  while (*ptr && nEnv < lengthof(env) - 1) {
+    env[nEnv++] = ptr;
+    ptr += std::strlen(ptr) + 1;
   };
-
-  envp = dyldEnv;
-  #endif
+  env[nEnv] = 0;
 
   // SUSv3 says argv and envp are "completely constant" and that the reason
   // posix_spawn() et al use char * const * is for compatibility.
 
   int ret = posix_spawn(&child, swiftBacktracePath, NULL, NULL,
                         const_cast<char * const *>(argv),
-                        const_cast<char * const *>(envp));
+                        const_cast<char * const *>(env));
   if (ret < 0)
     return false;
 
