@@ -18,6 +18,7 @@
 #define SWIFT_RUNTIME_BACKTRACE_H
 
 #include "swift/shims/Visibility.h"
+#include "swift/shims/_SwiftBacktracing.h"
 
 #include <inttypes.h>
 
@@ -38,13 +39,6 @@ typedef int ErrorCode;
 SWIFT_RUNTIME_STDLIB_INTERNAL ErrorCode _swift_installCrashHandler();
 
 SWIFT_RUNTIME_STDLIB_INTERNAL bool _swift_spawnBacktracer(const ArgChar * const *argv);
-
-struct CrashInfo {
-  uint64_t crashing_thread;
-  uint64_t signal;
-  uint64_t fault_address;
-  uint64_t mctx;
-};
 
 enum UnwindAlgorithm {
   Auto = 0,
