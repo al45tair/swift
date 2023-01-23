@@ -15,7 +15,12 @@ set(swift_backtracing_link_libraries
 )
 
 set(BACKTRACING_SOURCES
+  Context.swift
   MemoryReader.swift
+  Registers.swift
+  Utils.swift
+
+  get-cpu-context.S
 )
 
 add_swift_target_library(swift_Backtracing ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_STDLIB
