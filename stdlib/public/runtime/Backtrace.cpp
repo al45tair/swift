@@ -160,8 +160,7 @@ const char *algorithmToString(UnwindAlgorithm algorithm) {
   switch (algorithm) {
   case Auto: return "Auto";
   case Fast: return "Fast";
-  case DWARF: return "DWARF";
-  case SEH: return "SEH";
+  case Precise: return "Precise";
   }
 }
 
@@ -223,17 +222,8 @@ BacktraceInitializer::BacktraceInitializer() {
     // execute an arbitrary file.
 
 #if _WIN32
-    switch (_swift_backtraceSettings.algorithm) {
-    case DWARF:
-      swift::warning(0,
-                     "DWARF unwinding is not supported on this platform.\n");
-      SWIFT_FALLTHROUGH;
-    case Auto:
-      _swift_backtraceSettings.algorithm = SEH;
-      break;
-    default:
-      break;
-    }
+    if (_swift_backtraceSettings.algorithm == Auto)
+      _swift_backtraceSettings.algorithm = Precise;
 
     int len = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
                                     _swift_backtraceSettings.swiftBacktracePath, -1,
@@ -269,17 +259,8 @@ BacktraceInitializer::BacktraceInitializer() {
       _swift_backtraceSettings.enabled = Off;
     }
 #else
-    switch (_swift_backtraceSettings.algorithm) {
-    case SEH:
-      swift::warning(0,
-                     "SEH unwinding is not supported on this platform.\n");
-      SWIFT_FALLTHROUGH;
-    case Auto:
-      _swift_backtraceSettings.algorithm = DWARF;
-      break;
-    default:
-      break;
-    }
+    if (_swift_backtraceSettings.algorithm == Auto)
+      _swift_backtraceSettings.algorithm = Precise;
 
     size_t len = strlen(_swift_backtraceSettings.swiftBacktracePath);
     if (len > SWIFT_BACKTRACE_BUFFER_SIZE - 1) {
@@ -439,10 +420,8 @@ _swift_processBacktracingSetting(llvm::StringRef key,
       _swift_backtraceSettings.algorithm = Auto;
     else if (value.equals_insensitive("fast"))
       _swift_backtraceSettings.algorithm = Fast;
-    else if (value.equals_insensitive("DWARF"))
-      _swift_backtraceSettings.algorithm = DWARF;
-    else if (value.equals_insensitive("SEH"))
-      _swift_backtraceSettings.algorithm = SEH;
+    else if (value.equals_insensitive("precise"))
+      _swift_backtraceSettings.algorithm = Precise;
     else {
       swift::warning(0,
                      "unknown backtracing algorithm '%.*s'\n",

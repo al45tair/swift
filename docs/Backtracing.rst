@@ -62,10 +62,9 @@ follows:
 | unwind          | auto    | Specifies which unwind algorithm to use.         |
 |                 |         | ``auto`` means to choose appropriately for the   |
 |                 |         | platform.  Other options are ``fast``, which     |
-|                 |         | does a naïve stack walk; ``DWARF``, which uses   |
-|                 |         | the exception handling unwind information to     |
-|                 |         | walk the stack; and ``SEH``, which uses Windows  |
-|                 |         | APIs to perform a stack walk.                    |
+|                 |         | does a naïve stack walk; and ``precise``, which  |
+|                 |         | uses exception handling data to perform an       |
+|                 |         | unwind.                                          |
 +-----------------+---------+--------------------------------------------------+
 | level           | 1       | Specifies the level of verbosity for the         |
 |                 |         | backtrace.                                       |

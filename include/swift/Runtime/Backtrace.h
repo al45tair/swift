@@ -43,8 +43,7 @@ SWIFT_RUNTIME_STDLIB_INTERNAL bool _swift_spawnBacktracer(const ArgChar * const 
 enum UnwindAlgorithm {
   Auto = 0,
   Fast = 1,
-  DWARF = 2,
-  SEH = 3,
+  Precise = 2
 };
 
 enum OnOffTty {

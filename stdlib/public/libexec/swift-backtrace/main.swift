@@ -24,7 +24,7 @@ import MSVCRT
 internal struct SwiftBacktrace {
   enum UnwindAlgorithm {
     case Fast
-    case DWARF
+    case Precise
   }
 
   static var unwindAlgorithm: UnwindAlgorithm = .DWARF
@@ -43,7 +43,7 @@ Generate a backtrace for the parent process.
 
 --unwind <algorithm>
 -u <algorithm>          Set the unwind algorithm to use.  Supported algorithms
-                        are "fast" and "DWARF".
+                        are "fast" and "precise".
 
 --symbolicate [<bool>]
 -s [<bool>]             Set whether or not to symbolicate.
@@ -76,8 +76,8 @@ Generate a backtrace for the parent process.
           switch v {
             case "fast", "Fast", "FAST":
               unwindAlgorithm = .Fast
-            case "dwarf", "Dwarf", "DWARF":
-              unwindAlgorithm = .DWARF
+            case "precise", "Precise", "PRECISE":
+              unwindAlgorithm = .Precise
             default:
               print("swift-backtrace: unknown unwind algorithm '\(v)'")
               usage()
