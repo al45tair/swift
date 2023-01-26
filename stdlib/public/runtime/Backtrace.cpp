@@ -37,7 +37,7 @@
 #include <cstring>
 #include <cerrno>
 
-#define DEBUG_BACKTRACING_SETTINGS 1
+#define DEBUG_BACKTRACING_SETTINGS 0
 
 #ifndef lengthof
 #define lengthof(x) (sizeof(x) / sizeof(x[0]))

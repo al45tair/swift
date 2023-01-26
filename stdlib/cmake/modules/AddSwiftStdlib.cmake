@@ -2750,7 +2750,6 @@ function(add_swift_target_executable name)
     endif()
 
     foreach(arch ${SWIFT_SDK_${sdk}_ARCHITECTURES})
-      set(FAT_SUFFIX "-${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
       set(VARIANT_SUFFIX "-${SWIFT_SDK_${sdk}_LIB_SUBDIR}-${arch}")
       set(VARIANT_NAME "${name}${VARIANT_SUFFIX}")
       set(MODULE_VARIANT_SUFFIX "-swiftmodule${VARIANT_SUFFIX}")
@@ -2758,7 +2757,6 @@ function(add_swift_target_executable name)
 
       # Configure macCatalyst flavor variables
       if(DEFINED maccatalyst_build_flavor)
-        set(maccatalyst_fat_suffix "-${SWIFT_SDK_MACCATALYST_LIB_SUBDIR}")
         set(maccatalyst_variant_suffix "-${SWIFT_SDK_MACCATALYST_LIB_SUBDIR}-${arch}")
         set(maccatalyst_variant_name "${name}${maccatalyst_variant_suffix}")
 
@@ -2773,7 +2771,7 @@ function(add_swift_target_executable name)
       # Swift compiles depend on swift modules, while links depend on
       # linked libraries.  Find targets for both of these here.
       set(swiftexe_module_dependency_targets)
-      set(swiftexe_link_libraries ${SWIFTEXE_TARGET_LINK_LIBRARIES})
+      set(swiftexe_link_libraries_targets ${SWIFTEXE_TARGET_LINK_LIBRARIES})
       foreach(mod ${swiftexe_module_depends_flattened})
         if(DEFINED maccatalyst_build_flavor)
           if(maccatalyst_build_flavor STREQUAL "zippered")
@@ -2787,7 +2785,7 @@ function(add_swift_target_executable name)
             # Zippered libraries link against their zippered library targets, which
             # live (and are built in) the same location as normal macOS libraries.
             list(APPEND swiftexe_link_libraries_targets
-              "swift${mod}${FAT_SUFFIX}")
+              "swift${mod}${VARIANT_SUFFIX}")
           elseif(maccatalyst_build_flavor STREQUAL "ios-like")
             # iOS-like libraries depend on the macCatalyst modules of their dependencies
             # regardless of whether the target is zippered or macCatalyst only.
@@ -2798,17 +2796,17 @@ function(add_swift_target_executable name)
             # or zippered targets.
             if(mod IN_LIST SWIFTEXE_TARGET_SWIFT_MODULE_DEPENDS_MACCATALYST_UNZIPPERED)
               list(APPEND swiftexe_link_libraries_targets
-                "swift${mod}${maccatalyst_fat_suffix}")
+                "swift${mod}${maccatalyst_variant_suffix}")
             else()
               list(APPEND swiftexe_link_libraries_targets
-                "swift${mod}${FAT_SUFFIX}")
+                "swift${mod}${VARIANT_SUFFIX}")
             endif()
           else()
             list(APPEND swiftexe_module_dependency_targets
               "swift${mod}${MODULE_VARIANT_SUFFIX}")
 
             list(APPEND swiftexe_link_libraries_targets
-              "swift${mod}${FAT_SUFFIX}")
+              "swift${mod}${VARIANT_SUFFIX}")
           endif()
           continue()
         endif()
@@ -2816,8 +2814,8 @@ function(add_swift_target_executable name)
         list(APPEND swiftexe_module_dependency_targets
           "swift${mod}${MODULE_VARIANT_SUFFIX}")
 
-        list(APPEND swiftexe_private_link_libraries_targets
-          "swift${mod}${FAT_SUFFIX}")
+        list(APPEND swiftexe_link_libraries_targets
+          "swift${mod}${VARIANT_SUFFIX}")
       endforeach()
 
       # Don't add the ${arch} to the suffix.  We want to link against fat

@@ -1,5 +1,7 @@
 add_swift_target_executable(swift-backtrace BUILD_WITH_STDLIB
   main.swift
+  Target.swift
+  Utils.swift
 
   SWIFT_MODULE_DEPENDS
     _Backtracing

@@ -79,14 +79,21 @@ extension MemoryReader {
   var result: kern_return_t
 }
 
-@_spi(MemoryReaders) public struct LocalMemoryReader: MemoryReader {
+@_spi(MemoryReaders) public struct RemoteMemoryReader: MemoryReader {
   public typealias Address = UInt64
+
+  private var task: task_t
+
+  // Sadly we can't expose the type of this argument
+  public init(task: Any) {
+    self.task = task as! task_t
+  }
 
   public func fetch<T>(from address: Address,
                        into buffer: UnsafeMutableBufferPointer<T>) throws {
     let size = mach_vm_size_t(MemoryLayout<T>.stride * buffer.count)
     var sizeOut = mach_vm_size_t(0)
-    let kr = mach_vm_read_overwrite(mach_task_self_,
+    let kr = mach_vm_read_overwrite(task,
                                     mach_vm_address_t(address),
                                     mach_vm_size_t(size),
                                     unsafeBitCast(buffer.baseAddress,
@@ -96,6 +103,16 @@ extension MemoryReader {
     if kr != KERN_SUCCESS {
       throw MachError(result: kr)
     }
+  }
+}
+
+@_spi(MemoryReaders) public struct LocalMemoryReader: MemoryReader {
+  public typealias Address = UInt64
+
+  public func fetch<T>(from address: Address,
+                       into buffer: UnsafeMutableBufferPointer<T>) throws {
+    let reader = RemoteMemoryReader(task: mach_task_self_)
+    return try reader.fetch(from: address, into: buffer)
   }
 }
 #endif

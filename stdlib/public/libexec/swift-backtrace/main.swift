@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift.org open source project
 //
-// Copyright (c) 2022 Apple Inc. and the Swift project authors
+// Copyright (c) 2023 Apple Inc. and the Swift project authors
 // Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See https://swift.org/LICENSE.txt for license information
@@ -12,13 +12,12 @@
 
 #if canImport(Darwin)
 import Darwin.C
+import Darwin.Mach
 #elseif canImport(Glibc)
 import Glibc
 #elseif canImport(MSVCRT)
 import MSVCRT
 #endif
-
-@_spi(Internal) import _Backtracing
 
 @main
 internal struct SwiftBacktrace {
@@ -27,13 +26,19 @@ internal struct SwiftBacktrace {
     case Precise
   }
 
-  static var unwindAlgorithm: UnwindAlgorithm = .Precise
-  static var symbolicate = false
-  static var interactive = false
-  static var color = false
-  static var timeout = 30
-  static var level = 1
-  static var crashInfo: UInt64? = nil
+  struct Arguments {
+    var unwindAlgorithm: UnwindAlgorithm = .Precise
+    var symbolicate = false
+    var interactive = false
+    var color = false
+    var timeout = 30
+    var level = 1
+    var crashInfo: UInt64? = nil
+  }
+
+  static var args = Arguments()
+
+  static var target: Target? = nil
 
   static func usage() {
     print("""
@@ -75,9 +80,9 @@ Generate a backtrace for the parent process.
         if let v = value {
           switch v.lowercased() {
             case "fast":
-              unwindAlgorithm = .Fast
+              args.unwindAlgorithm = .Fast
             case "precise":
-              unwindAlgorithm = .Precise
+              args.unwindAlgorithm = .Precise
             default:
               print("swift-backtrace: unknown unwind algorithm '\(v)'")
               usage()
@@ -90,26 +95,26 @@ Generate a backtrace for the parent process.
         }
       case "-s", "--symbolicate":
         if let v = value {
-          symbolicate = v.lowercased() == "true"
+          args.symbolicate = v.lowercased() == "true"
         } else {
-          symbolicate = true
+          args.symbolicate = true
         }
       case "-i", "--interactive":
         if let v = value {
-          interactive = v.lowercased() == "true"
+          args.interactive = v.lowercased() == "true"
         } else {
-          interactive = true
+          args.interactive = true
         }
       case "-c", "--color":
         if let v = value {
-          color = v.lowercased() == "true"
+          args.color = v.lowercased() == "true"
         } else {
-          color = true
+          args.color = true
         }
       case "-t", "--timeout":
         if let v = value {
           if let secs = Int(v), secs >= 0 {
-            timeout = secs
+            args.timeout = secs
           } else {
             print("bad timeout '\(v)'")
           }
@@ -121,7 +126,7 @@ Generate a backtrace for the parent process.
       case "-l", "--level":
         if let v = value {
           if let l = Int(v), l > 0 {
-            level = l
+            args.level = l
           } else {
             print("swift-backtrace: bad verbosity level '\(v)'")
             usage()
@@ -135,7 +140,7 @@ Generate a backtrace for the parent process.
       case "-a", "--crashinfo":
         if let v = value {
           if let a = UInt64(v, radix: 16) {
-            crashInfo = a
+            args.crashInfo = a
           } else {
             print("swift-backtrace: bad pointer '\(v)'")
             usage()
@@ -180,12 +185,132 @@ Generate a backtrace for the parent process.
       handleArgument(key, value: nil)
     }
 
-    if crashInfo == nil {
+    guard let crashInfoAddr = args.crashInfo else {
       print("swift-backtrace: --crashinfo is not optional")
       usage()
       exit(1)
     }
 
-    print("SWIFT BACKTRACE INVOKED!")
+    target = Target(crashInfoAddr: crashInfoAddr)
+
+    printCrashLog()
+
+    if args.interactive {
+      if let ch = waitForKey("Press space to interact, or any other key to quit",
+                             timeout: args.timeout),
+         ch == UInt8(ascii: " ") {
+        interactWithUser()
+      }
+    }
+
+  }
+
+  #if os(Linux) || os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  static func setRawMode() -> termios {
+    var oldAttrs = termios()
+    tcgetattr(0, &oldAttrs)
+
+    var newAttrs = oldAttrs
+    newAttrs.c_lflag &= ~(UInt(ICANON) | UInt(ECHO))
+    tcsetattr(0, TCSANOW, &newAttrs)
+
+    return oldAttrs
+  }
+
+  static func resetInputMode(mode: termios) {
+    var theMode = mode
+    tcsetattr(0, TCSANOW, &theMode)
+  }
+
+  static func waitForKey(_ message: String, timeout: Int) -> Int32? {
+    let oldMode = setRawMode()
+
+    defer {
+      print("\r\u{1b}[0K", terminator: "")
+      fflush(stdout)
+      resetInputMode(mode: oldMode)
+    }
+
+    var remaining = timeout
+
+    while true {
+      print("\r\(message) (\(remaining)s) ", terminator: "")
+      fflush(stdout)
+
+      var pfd = pollfd(fd: 0, events: Int16(POLLIN), revents: 0)
+
+      let ret = poll(&pfd, 1, 1000)
+      if ret == 0 {
+        remaining -= 1
+        if remaining == 0 {
+          break
+        }
+        continue
+      } else if ret < 0 {
+        break
+      }
+
+      let ch = getchar()
+      return ch
+    }
+
+    return nil
+  }
+  #elseif os(Windows)
+  static func waitForKey(_ message: String, timeout: Int) -> Int32? {
+    // ###TODO
+    return nil
+  }
+  #endif
+
+  static func printCrashLog() {
+    guard let target = target else {
+      print("swift-backtrace: unable to get target")
+      return
+    }
+    
+    guard let crashingThread = target.threads[target.crashingThread] else {
+      print("swift-backtrace: unable to find crashing thread")
+      return
+    }
+
+    print("""
+            Process \(target.pid) crashed in thread \(target.crashingThread) "\(crashingThread.name)"
+
+            Signal: \(target.signal) \(target.signalName)
+            Fault address: \(hex(target.faultAddress))
+
+            """)
+  }
+
+  static func interactWithUser() {
+    while true {
+      print(">>> ", terminator: "")
+      guard let input = readLine() else {
+        print("")
+        break
+      }
+
+      let cmd = input.split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
+
+      if cmd.count < 1 {
+        continue
+      }
+
+      switch cmd[0].lowercased() {
+        case "exit", "quit":
+          return
+        case "help":
+          print("""
+                  Available commands:
+
+                  exit   Exit interaction, allowing program to crash normally.
+                  quit   Synonym for exit
+
+                  """)
+        default:
+          print("unknown command '\(cmd[0])'")
+      }
+    }
   }
 }

@@ -190,10 +190,6 @@ extension arm_gprs {
   public typealias GPRValue = UInt64
   public typealias Register = X86_64Register
 
-  #if os(macOS) || os(iOS) || os(watchOS)
-  internal typealias MContext = darwin_x86_64_mcontext
-  #endif
-
   var gprs = x86_64_gprs()
 
   public var programCounter: Address {
@@ -223,7 +219,7 @@ extension arm_gprs {
 
   public static var registerCount: Int { return 56 }
 
-  #if os(macOS)
+  #if (os(macOS) || os(iOS) || os(watchOS) || os(tvOS)) && arch(x86_64)
   init?(from thread: thread_t) {
     var state = darwin_x86_64_thread_state()
     let kr = mach_thread_get_state(thread, x86_THREAD_STATE64, &state)
@@ -234,7 +230,7 @@ extension arm_gprs {
     self.init(from: state)
   }
 
-  init(with mctx: MContext) {
+  init(with mctx: darwin_x86_64_mcontext) {
     self.init(from: mctx.ss)
   }
 
@@ -260,6 +256,15 @@ extension arm_gprs {
     gprs.cs = UInt16(state.cs)
     gprs.fs = UInt16(state.fs)
     gprs.gs = UInt16(state.gs)
+    gprs.valid = 0x1fffff
+  }
+
+  public static func fromHostThread(_ thread: Any) -> HostContext? {
+    return X86_64Context(from: thread as! thread_t)
+  }
+
+  public static func fromHostMContext(_ mcontext: Any) -> HostContext {
+    return X86_64Context(with: mcontext as! darwin_x86_64_mcontext)
   }
   #endif
 
@@ -529,10 +534,6 @@ extension arm_gprs {
   public typealias GPRValue = UInt64
   public typealias Register = ARM64Register
 
-  #if os(macOS) || os(iOS) || os(watchOS)
-  internal typealias MContext = darwin_arm64_mcontext
-  #endif
-
   var gprs = arm64_gprs()
 
   public var programCounter: GPRValue {
@@ -564,14 +565,58 @@ extension arm_gprs {
 
   public static var registerCount: Int { return 40 }
 
-#if arch(arm64)
+  #if (os(macOS) || os(iOS) || os(watchOS) || os(tvOS)) && arch(arm64)
+  init?(from thread: thread_t) {
+    var state = darwin_arm64_thread_state()
+    let kr = mach_thread_get_state(thread, ARM_THREAD_STATE64, &state)
+    if kr != KERN_SUCCESS {
+      return nil
+    }
+
+    self.init(from: state)
+  }
+
+  init(with mctx: darwin_arm64_mcontext) {
+    self.init(from: mctx.ss)
+  }
+
+  init(from state: darwin_arm64_thread_state) {
+    withUnsafeMutablePointer(to: &gprs._x) {
+      $0.withMemoryRebound(to: UInt64.self, capacity: 32){ to in
+        withUnsafePointer(to: state._x) {
+          $0.withMemoryRebound(to: UInt64.self, capacity: 29){ from in
+            for n in 0..<29 {
+              to[n] = from[n]
+            }
+          }
+        }
+
+        to[29] = state.fp
+        to[30] = state.lr
+        to[31] = state.sp
+      }
+    }
+    gprs.pc = state.pc
+    gprs.valid = 0x1ffffffff
+  }
+
+  public static func fromHostThread(_ thread: Any) -> HostContext? {
+    return ARM64Context(from: thread as! thread_t)
+  }
+
+  public static func fromHostMContext(_ mcontext: Any) -> HostContext {
+    return ARM64Context(with: mcontext as! darwin_arm64_mcontext)
+  }
+#endif
+
+  #if arch(arm64)
   @_silgen_name("_swift_get_cpu_context")
   static func _swift_get_cpu_context() -> ARM64Context
 
   public static func withCurrentContext<T>(fn: (ARM64Context) throws -> T) rethrows -> T {
     return try fn(_swift_get_cpu_context())
   }
-#endif
+  #endif
 
   private func isValid(_ register: Register) -> Bool {
     if register.rawValue < 33 {

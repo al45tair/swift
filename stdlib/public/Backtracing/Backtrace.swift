@@ -16,7 +16,7 @@
 
 import Swift
 
-#if os(macOS) || os(iOS) || os(watchOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
 
 @_implementationOnly import Darwin.Mach
 @_implementationOnly import _SwiftBacktracingShims
@@ -197,97 +197,118 @@ public struct Backtrace: CustomStringConvertible, Sendable {
                              limit: Int? = 4096,
                              offset: Int = 0,
                              top: Int = 0) throws -> Backtrace {
-    var frames: [Frame]
+    return try HostContext.withCurrentContext { ctx in
+      try capture(from: ctx,
+                  using: UnsafeLocalMemoryReader(),
+                  algorithm: algorithm,
+                  limit: limit,
+                  offset: offset,
+                  top: top)
+    }
+  }
+
+  @_spi(Internal)
+  public static func capture(from context: some Context,
+                             using memoryReader: some MemoryReader,
+                             algorithm: UnwindAlgorithm = .auto,
+                             limit: Int? = 4096,
+                             offset: Int = 0,
+                             top: Int = 0) throws -> Backtrace {
     switch algorithm {
       // ###FIXME: .precise should be using DWARF EH
       case .auto, .fast, .precise:
-        frames = HostContext.withCurrentContext { ctx in
-          let unwinder =
-            FramePointerUnwinder(context: ctx,
-                                 memoryReader: UnsafeLocalMemoryReader())
-            .dropFirst(offset)
+        let unwinder =
+          FramePointerUnwinder(context: context, memoryReader: memoryReader)
+          .dropFirst(offset)
 
-          if let limit = limit {
-            if limit == 0 {
-              return [Frame.discontinuity]
-            }
-
-            let realTop = top < limit ? top : limit - 1
-            var iterator = unwinder.makeIterator()
-            var result: [Frame] = []
-
-            // Capture frames normally until we hit limit
-            while let frame = iterator.next() {
-              if result.count < limit {
-                result.append(frame)
-                if result.count == limit {
-                  break
-                }
-              }
-            }
-
-            if realTop == 0 {
-              if let _ = iterator.next() {
-                // More frames than we were asked for; replace the last
-                // one with a discontinuity
-                result[limit - 1] = .discontinuity
-              }
-
-              return result
-            } else {
-
-              // If we still have frames at this point, start tracking the
-              // last `realTop` frames in a circular buffer.
-              if let frame = iterator.next() {
-                let topSection = limit - realTop
-                var topFrames: [Frame] = []
-                var topNdx = 0
-
-                topFrames.reserveCapacity(realTop)
-                topFrames.insert(contentsOf: result.suffix(realTop - 1), at: 0)
-                topFrames.append(frame)
-
-                while let frame = iterator.next() {
-                  topFrames[topNdx] = frame
-                  topNdx += 1
-                  if topNdx >= realTop {
-                    topNdx = 0
-                  }
-                }
-
-                // Fix the backtrace to include a discontinuity followed by
-                // the contents of the circular buffer.
-                let firstPart = realTop - topNdx
-                let secondPart = topNdx
-                result[topSection - 1] = .discontinuity
-
-                result.replaceSubrange(topSection..<(topSection+firstPart),
-                                       with: topFrames.suffix(firstPart))
-                result.replaceSubrange((topSection+firstPart)..<limit,
-                                       with: topFrames.prefix(secondPart))
-              }
-
-              return result
-            }
-          } else {
-            return Array(unwinder)
+        if let limit = limit {
+          if limit == 0 {
+            return Backtrace(frames: [Frame.discontinuity])
           }
+
+          let realTop = top < limit ? top : limit - 1
+          var iterator = unwinder.makeIterator()
+          var frames: [Frame] = []
+
+          // Capture frames normally until we hit limit
+          while let frame = iterator.next() {
+            if frames.count < limit {
+              frames.append(frame)
+              if frames.count == limit {
+                break
+              }
+            }
+          }
+
+          if realTop == 0 {
+            if let _ = iterator.next() {
+              // More frames than we were asked for; replace the last
+              // one with a discontinuity
+              frames[limit - 1] = .discontinuity
+            }
+
+            return Backtrace(frames: frames)
+          } else {
+
+            // If we still have frames at this point, start tracking the
+            // last `realTop` frames in a circular buffer.
+            if let frame = iterator.next() {
+              let topSection = limit - realTop
+              var topFrames: [Frame] = []
+              var topNdx = 0
+
+              topFrames.reserveCapacity(realTop)
+              topFrames.insert(contentsOf: frames.suffix(realTop - 1), at: 0)
+              topFrames.append(frame)
+
+              while let frame = iterator.next() {
+                topFrames[topNdx] = frame
+                topNdx += 1
+                if topNdx >= realTop {
+                  topNdx = 0
+                }
+              }
+
+              // Fix the backtrace to include a discontinuity followed by
+              // the contents of the circular buffer.
+              let firstPart = realTop - topNdx
+              let secondPart = topNdx
+              frames[topSection - 1] = .discontinuity
+
+              frames.replaceSubrange(topSection..<(topSection+firstPart),
+                                     with: topFrames.suffix(firstPart))
+              frames.replaceSubrange((topSection+firstPart)..<limit,
+                                     with: topFrames.prefix(secondPart))
+            }
+
+            return Backtrace(frames: frames)
+          }
+        } else {
+          return Backtrace(frames: Array(unwinder))
         }
     }
-
-    return Backtrace(frames: frames)
   }
 
-  /// Capture the a list of the images currently mapped into the calling
+  /// Capture a list of the images currently mapped into the calling
   /// process.
   ///
   /// @returns A list of `Image`s.
   public static func captureImages() -> [Image] {
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    return captureImages(for: mach_task_self_)
+    #else
+    return []
+    #endif
+  }
+
+  @_spi(Internal)
+  public static func captureImages(for process: Any) -> [Image] {
     var images: [Image] = []
 
-    #if os(macOS) || os(iOS) || os(watchOS)
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    let task = process as! task_t
     var kret: kern_return_t = KERN_SUCCESS
-    let dyldInfo = _dyld_process_info_create(mach_task_self_, 0, &kret)
+    let dyldInfo = _dyld_process_info_create(task, 0, &kret)
 
     if kret != KERN_SUCCESS {
       print("warning: unable to create dyld process info; cannot fetch images")
