@@ -152,7 +152,7 @@ char level_buf[22];
 const char *backtracer_argv[] = {
   "swift-backtrace",            // 0
   "--unwind",                   // 1
-  "DWARF",                      // 2
+  "precise",                    // 2
   "--symbolicate",              // 3
   "true",                       // 4
   "--interactive",              // 5
@@ -238,7 +238,7 @@ run_backtracer()
     backtracer_argv[2] = "fast";
     break;
   default:
-    backtracer_argv[2] = "DWARF";
+    backtracer_argv[2] = "precise";
     break;
   }
 

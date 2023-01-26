@@ -25,6 +25,7 @@
 
 #if TARGET_OS_OSX
 #include <mach/task.h>
+#include <mach/vm_param.h>
 
 #include <libproc.h>
 #endif
@@ -54,7 +55,7 @@ struct x86_64_gprs {
 struct i386_gprs {
   uint32_t _r[8];
   uint32_t eflags;
-  uint32_t segreg[6];
+  uint16_t segreg[6];
   uint32_t eip;
   uint32_t valid;
 };

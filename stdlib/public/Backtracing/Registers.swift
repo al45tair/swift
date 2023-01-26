@@ -15,10 +15,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Swift
+
 // .. x86-64 .................................................................
 
 // https://gitlab.com/x86-psABIs/x86-64-ABI
-internal enum X86_64Register: Int, Comparable {
+@_spi(Registers) public enum X86_64Register: Int, Comparable {
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.rawValue < rhs.rawValue
@@ -120,7 +122,7 @@ case k7 = 125
 // .. i386 ...................................................................
 
 // https://gitlab.com/x86-psABIs/i386-ABI
-internal enum I386Register: Int, Comparable {
+@_spi(Registers) public enum I386Register: Int, Comparable {
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.rawValue < rhs.rawValue
@@ -181,7 +183,7 @@ case gs_base = 94
 // .. arm64 ..................................................................
 
 // https://github.com/ARM-software/abi-aa/tree/main/aadwarf64
-internal enum ARM64Register: Int, Comparable {
+@_spi(Registers) public enum ARM64Register: Int, Comparable {
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.rawValue < rhs.rawValue
@@ -315,7 +317,7 @@ case z31 = 127
 // .. arm ....................................................................
 
 // https://github.com/ARM-software/abi-aa/tree/main/aadwarf32
-internal enum ARMRegister: Int, Comparable {
+@_spi(Registers) public enum ARMRegister: Int, Comparable {
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.rawValue < rhs.rawValue
@@ -542,11 +544,11 @@ case htpidpr = 323
 }
 
 #if arch(x86_64)
-internal typealias HostRegister = X86_64Register
+@_spi(Registers) public typealias HostRegister = X86_64Register
 #elseif arch(i386)
-internal typealias HostRegister = I386Register
+@_spi(Registers) public typealias HostRegister = I386Register
 #elseif arch(arm64) || arch(arm64_32)
-internal typealias HostRegister = ARM64Register
+@_spi(Registers) public typealias HostRegister = ARM64Register
 #elseif arch(arm)
-internal typealias HostRegister = ARMRegister
+@_spi(Registers) public typealias HostRegister = ARMRegister
 #endif

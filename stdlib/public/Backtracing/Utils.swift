@@ -14,11 +14,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-internal func hex<T: FixedWidthInteger>(_ value: T) -> String {
+import Swift
+
+internal func hex<T: FixedWidthInteger>(_ value: T,
+                                        withPrefix: Bool = true) -> String {
   let digits = String(value, radix: 16)
   let padTo = value.bitWidth / 4
   let padding = digits.count >= padTo ? "" : String(repeating: "0",
                                                     count: padTo - digits.count)
+  let prefix = withPrefix ? "0x" : ""
 
-  return "0x\(padding)\(digits)"
+  return "\(prefix)\(padding)\(digits)"
+}
+
+internal func hex(_ bytes: [UInt8]) -> String {
+  return bytes.map{ hex($0, withPrefix: false) }.joined(separator: "")
 }

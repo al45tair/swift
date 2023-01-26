@@ -17,14 +17,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-@_implementationOnly import _SwiftBacktracingShims
-@_implementationOnly import Darwin.Mach
+import Swift
 
-internal enum ContextError: Error {
+@_implementationOnly import _SwiftBacktracingShims
+
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+@_implementationOnly import Darwin.Mach
+#endif
+
+@_spi(Contexts) public enum ContextError: Error {
   case unableToFormTLSAddress
 }
 
-internal protocol Context: CustomStringConvertible {
+@_spi(Contexts) public protocol Context: CustomStringConvertible {
   /// Represents a machine address for this type of machine
   associatedtype Address: FixedWidthInteger
 
@@ -70,6 +75,12 @@ internal protocol Context: CustomStringConvertible {
 
   /// Set all of the registers in bulk
   mutating func setRegisters(_ registers: [GPRValue?])
+
+  /// Strip any pointer authentication that might apply from an address.
+  static func stripPtrAuth(address: Address) -> Address
+
+  /// Test if an address is appropriately aligned for the stack.
+  static func isAlignedForStack(framePointer: Address) -> Bool
 }
 
 extension Context {
@@ -83,6 +94,10 @@ extension Context {
         setRegister(reg, to: value)
       }
     }
+  }
+
+  public static func stripPtrAuth(address: Address) -> Address {
+    return address
   }
 }
 
@@ -169,14 +184,14 @@ extension arm_gprs {
 
 // .. x86-64 ...................................................................
 
-internal struct X86_64Context: Context {
+@_spi(Contexts) public struct X86_64Context: Context {
   public typealias Address = UInt64
   public typealias Size = UInt64
   public typealias GPRValue = UInt64
   public typealias Register = X86_64Register
 
-  #if os(macOS)
-  public typealias MContext = darwin_x86_64_mcontext
+  #if os(macOS) || os(iOS) || os(watchOS)
+  internal typealias MContext = darwin_x86_64_mcontext
   #endif
 
   var gprs = x86_64_gprs()
@@ -337,25 +352,36 @@ internal struct X86_64Context: Context {
     }
   }
 
-  var description: String {
+  public var description: String {
     return """
       rax: \(hex(gprs.getR(0))) rbx: \(hex(gprs.getR(3))) rcx: \(hex(gprs.getR(2)))
       rdx: \(hex(gprs.getR(1))) rsi: \(hex(gprs.getR(4))) rdi: \(hex(gprs.getR(5)))
       rbp: \(hex(gprs.getR(6))) rsp: \(hex(gprs.getR(7)))  r8: \(hex(gprs.getR(8)))
-      r9: \(hex(gprs.getR(9))) r10: \(hex(gprs.getR(10))) r11: \(hex(gprs.getR(11)))
+       r9: \(hex(gprs.getR(9))) r10: \(hex(gprs.getR(10))) r11: \(hex(gprs.getR(11)))
       r12: \(hex(gprs.getR(12))) r13: \(hex(gprs.getR(13))) r14: \(hex(gprs.getR(14)))
       r15: \(hex(gprs.getR(15)))
 
-      cs: \(hex(gprs.cs))  fs: \(hex(gprs.fs))  gs: \(hex(gprs.gs))
+       cs: \(hex(gprs.cs))  fs: \(hex(gprs.fs))  gs: \(hex(gprs.gs))
 
       rip: \(hex(gprs.rip)) rflags: \(hex(gprs.rflags))
       """
   }
+
+  public static func isAlignedForStack(framePointer: Address) -> Bool {
+    return (framePointer & 0xf) == 0
+  }
+
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  public static func stripPtrAuth(address: Address) -> Address {
+    // ###FIXME: Is there a better way to do this?
+    return address & (MACH_VM_MAX_ADDRESS | 0xffffff)
+  }
+  #endif
 }
 
 // .. i386 .....................................................................
 
-internal struct I386Context: Context {
+@_spi(Contexts) public struct I386Context: Context {
   public typealias Address = UInt32
   public typealias Size = UInt32
   public typealias GPRValue = UInt32
@@ -479,7 +505,7 @@ internal struct I386Context: Context {
     }
   }
 
-  var description: String {
+  public var description: String {
     return """
       eax: \(hex(gprs.getR(0))) ebx: \(hex(gprs.getR(3))) ecx: \(hex(gprs.getR(1))) edx: \(hex(gprs.getR(2)))
       esi: \(hex(gprs.getR(6))) edi: \(hex(gprs.getR(7))) ebp: \(hex(gprs.getR(5))) esp: \(hex(gprs.getR(4)))
@@ -489,18 +515,22 @@ internal struct I386Context: Context {
       eip: \(hex(gprs.eip)) eflags: \(hex(gprs.eflags))
       """
   }
+
+  public static func isAlignedForStack(framePointer: Address) -> Bool {
+    return (framePointer & 0xf) == 8
+  }
 }
 
 // .. ARM64 ....................................................................
 
-internal struct ARM64Context: Context {
+@_spi(Contexts) public struct ARM64Context: Context {
   public typealias Address = UInt64
   public typealias Size = UInt64
   public typealias GPRValue = UInt64
   public typealias Register = ARM64Register
 
-  #if os(macOS)
-  public typealias MContext = darwin_arm64_mcontext
+  #if os(macOS) || os(iOS) || os(watchOS)
+  internal typealias MContext = darwin_arm64_mcontext
   #endif
 
   var gprs = arm64_gprs()
@@ -592,7 +622,7 @@ internal struct ARM64Context: Context {
     }
   }
 
-  var description: String {
+  public var description: String {
     return """
        x0: \(hex(gprs.getX(0)))  x1: \(hex(gprs.getX(1)))
        x2: \(hex(gprs.getX(2)))  x3: \(hex(gprs.getX(3)))
@@ -617,11 +647,15 @@ internal struct ARM64Context: Context {
       pc: \(hex(gprs.pc))
       """
   }
+
+  public static func isAlignedForStack(framePointer: Address) -> Bool {
+    return (framePointer & 1) == 0
+  }
 }
 
 // .. 32-bit ARM ...............................................................
 
-internal struct ARMContext: Context {
+@_spi(Contexts) public struct ARMContext: Context {
   public typealias Address = UInt32
   public typealias Size = UInt32
   public typealias GPRValue = UInt32
@@ -704,7 +738,7 @@ internal struct ARMContext: Context {
     }
   }
 
-  var description: String {
+  public var description: String {
     return """
        r0: \(hex(gprs.getR(0)))  r1: \(hex(gprs.getR(1)))
        r2: \(hex(gprs.getR(2)))  r3: \(hex(gprs.getR(3)))
@@ -719,6 +753,10 @@ internal struct ARMContext: Context {
        lr: \(hex(gprs.getR(14))) (aka r14)
        pc: \(hex(gprs.getR(15))) (aka r15)
       """
+  }
+
+  public static func isAlignedForStack(framePointer: Address) -> Bool {
+    return (framePointer & 1) == 0
   }
 }
 
@@ -748,11 +786,11 @@ private func mach_thread_get_state<T>(_ thread: thread_t,
 /// HostContext is an alias for the appropriate context for the machine on which
 /// the code was compiled.
 #if arch(x86_64)
-typealias HostContext = X86_64Context
+@_spi(Contexts) public typealias HostContext = X86_64Context
 #elseif arch(i386)
-typealias HostContext = I386Context
+@_spi(Contexts) public typealias HostContext = I386Context
 #elseif arch(arm64)
-typealias HostContext = ARM64Context
+@_spi(Contexts) public typealias HostContext = ARM64Context
 #elseif arch(arm)
-typealias HostContext = ARMContext
+@_spi(Contexts) public typealias HostContext = ARMContext
 #endif

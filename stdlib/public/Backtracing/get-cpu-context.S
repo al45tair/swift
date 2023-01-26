@@ -27,7 +27,7 @@
 // .. x86-64 ...................................................................
 
 #if defined(__x86_64__)
-        // On entry, rax contains the pointer to the AMD64Context
+        // On entry, rax contains the pointer to the x86_64_gprs
 FN(_swift_get_cpu_context):
         movq %rax,           (%rax)
         movq %rdx,          8(%rax)
@@ -49,22 +49,22 @@ FN(_swift_get_cpu_context):
         pushf
         pop  %rdx
         movq %rdx,         128(%rax)
-        movq %cs,          %rdx
-        movq %rdx,         136(%rax)
-        movq %fs,          %rdx
-        movq %rdx,         144(%rax)
-        movq %gs,          %rdx
-        movq %rdx,         152(%rax)
+        movw %cs,          %dx
+        movw %dx,          136(%rax)
+        movw %fs,          %dx
+        movw %dx,          138(%rax)
+        movw %gs,          %dx
+        movw %dx,          140(%rax)
         movq (%rsp),       %rdx
-        movq %rdx,         160(%rax)
-        movq $0x1fffff,    168(%rax)
+        movq %rdx,         144(%rax)
+        movq $0x1fffff,    152(%rax)
         ret
 #endif
 
 // .. i386 .....................................................................
 
 #if defined(__i386__)
-        // On entry, 8(%esp) contains the pointer to the I386Context
+        // On entry, 8(%esp) contains the pointer to the i386_gprs
 FN(_swift_get_cpu_context):
         push %eax
         movl 8(%esp),  %eax
@@ -79,21 +79,21 @@ FN(_swift_get_cpu_context):
         pushf
         pop  %edx
         movl %edx,    32(%eax)
-        movl %ss,     %edx
-        movl %edx,    36(%eax)
-        movl %cs,     %edx
-        movl %edx,    40(%eax)
-        movl %ds,     %edx
-        movl %edx,    44(%eax)
-        movl %es,     %edx
-        movl %edx,    48(%eax)
-        movl %fs,     %edx
-        movl %edx,    52(%eax)
-        movl %gs,     %edx
-        movl %edx,    56(%eax)
-        movl (%esp),  %edx
+        movw %ss,     %dx
+        movw %dx,     36(%eax)
+        movw %cs,     %dx
+        movw %dx,     38(%eax)
+        movw %ds,     %dx
+        movw %dx,     40(%eax)
+        movw %es,     %dx
+        movw %dx,     42(%eax)
+        movw %fs,     %dx
+        movw %dx,     44(%eax)
+        movw %gs,     %dx
+        movw %dx,     46(%eax)
+        movl (%esp),  %dx
         movl %edx,    (%eax)
-        movl $0xffff, 60(%eax)
+        movl $0xffff, 48(%eax)
         popl %eax
         ret
 #endif
@@ -102,6 +102,7 @@ FN(_swift_get_cpu_context):
 
 #if defined(__aarch64__)
         .p2align 2
+        // On entry, x8 contains a pointer to the arm64_gprs
 FN(_swift_get_cpu_context):
         stp  x0,  x1, [x8, #0x00]
         stp  x2,  x3, [x8, #0x10]
@@ -130,6 +131,7 @@ FN(_swift_get_cpu_context):
 
 #if defined(__arm__)
         .p2align 2
+        // On entry, r0 contains a pointer to the arm_gprs
 FN(_swift_get_cpu_context):
         stm r0, {r0-r14}
         str lr, [r0, #0x3c]

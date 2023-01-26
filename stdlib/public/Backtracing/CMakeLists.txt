@@ -15,9 +15,12 @@ set(swift_backtracing_link_libraries
 )
 
 set(BACKTRACING_SOURCES
+  Backtrace.swift
   Context.swift
+  FramePointerUnwinder.swift
   MemoryReader.swift
   Registers.swift
+  SymbolicatedBacktrace.swift
   Utils.swift
 
   get-cpu-context.S
@@ -26,13 +29,19 @@ set(BACKTRACING_SOURCES
 add_swift_target_library(swift_Backtracing ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_STDLIB
   ${BACKTRACING_SOURCES}
 
-  SWIFT_MODULE_DEPENDS_LINUX Glibc
-  SWIFT_MODULE_DEPENDS_WINDOWS CRT
+  SWIFT_MODULE_DEPENDS_IOS Darwin _Concurrency
+  SWIFT_MODULE_DEPENDS_OSX Darwin _Concurrency
+  SWIFT_MODULE_DEPENDS_TVOS Darwin _Concurrency
+  SWIFT_MODULE_DEPENDS_WATCHOS Darwin _Concurrency
+  SWIFT_MODULE_DEPENDS_MACCATALYST Darwin _Concurrency
+  SWIFT_MODULE_DEPENDS_LINUX Glibc _Concurrency
+  SWIFT_MODULE_DEPENDS_WINDOWS CRT _Concurrency
 
   LINK_LIBRARIES ${swift_backtracing_link_libraries}
 
   SWIFT_COMPILE_FLAGS
     ${SWIFT_STANDARD_LIBRARY_SWIFT_FLAGS}
+    -parse-stdlib
 
   LINK_FLAGS
     ${SWIFT_RUNTIME_SWIFT_LINK_FLAGS}

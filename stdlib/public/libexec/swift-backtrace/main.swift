@@ -27,7 +27,7 @@ internal struct SwiftBacktrace {
     case Precise
   }
 
-  static var unwindAlgorithm: UnwindAlgorithm = .DWARF
+  static var unwindAlgorithm: UnwindAlgorithm = .Precise
   static var symbolicate = false
   static var interactive = false
   static var color = false
@@ -73,10 +73,10 @@ Generate a backtrace for the parent process.
         exit(0)
       case "-u", "--unwind":
         if let v = value {
-          switch v {
-            case "fast", "Fast", "FAST":
+          switch v.lowercased() {
+            case "fast":
               unwindAlgorithm = .Fast
-            case "precise", "Precise", "PRECISE":
+            case "precise":
               unwindAlgorithm = .Precise
             default:
               print("swift-backtrace: unknown unwind algorithm '\(v)'")
@@ -90,19 +90,19 @@ Generate a backtrace for the parent process.
         }
       case "-s", "--symbolicate":
         if let v = value {
-          symbolicate = v == "true"
+          symbolicate = v.lowercased() == "true"
         } else {
           symbolicate = true
         }
       case "-i", "--interactive":
         if let v = value {
-          interactive = v == "true"
+          interactive = v.lowercased() == "true"
         } else {
           interactive = true
         }
       case "-c", "--color":
         if let v = value {
-          color = v == "true"
+          color = v.lowercased() == "true"
         } else {
           color = true
         }
@@ -187,6 +187,5 @@ Generate a backtrace for the parent process.
     }
 
     print("SWIFT BACKTRACE INVOKED!")
-
   }
 }
