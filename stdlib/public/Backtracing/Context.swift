@@ -377,9 +377,8 @@ extension arm_gprs {
   }
 
   #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
-  public static func stripPtrAuth(address: Address) -> Address {
-    // ###FIXME: Is there a better way to do this?
-    return address & (MACH_VM_MAX_ADDRESS | 0xffffff)
+  internal static var coreSymbolicationArchitecture: CSArchitecture {
+    return kCSArchitectureX86_64
   }
   #endif
 }
@@ -524,6 +523,12 @@ extension arm_gprs {
   public static func isAlignedForStack(framePointer: Address) -> Bool {
     return (framePointer & 0xf) == 8
   }
+
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  internal static var coreSymbolicationArchitecture: CSArchitecture {
+    return kCSArchitectureI386
+  }
+  #endif
 }
 
 // .. ARM64 ....................................................................
@@ -696,6 +701,19 @@ extension arm_gprs {
   public static func isAlignedForStack(framePointer: Address) -> Bool {
     return (framePointer & 1) == 0
   }
+
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  public static func stripPtrAuth(address: Address) -> Address {
+    // Is there a better way to do this?  It'd be easy if we just wanted to
+    // strip for the *host*, but we might conceivably want this under other
+    // circumstances too.
+    return address & 0x0007ffffffffffff
+  }
+
+  internal static var coreSymbolicationArchitecture: CSArchitecture {
+    return kCSArchitectureArm64
+  }
+  #endif
 }
 
 // .. 32-bit ARM ...............................................................
@@ -803,6 +821,12 @@ extension arm_gprs {
   public static func isAlignedForStack(framePointer: Address) -> Bool {
     return (framePointer & 1) == 0
   }
+
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  internal static var coreSymbolicationArchitecture: CSArchitecture {
+    return kCSArchitectureArmV7K
+  }
+  #endif
 }
 
 // .. Darwin specifics .........................................................

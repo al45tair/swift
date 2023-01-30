@@ -54,7 +54,7 @@ struct TargetThread {
   var id: ThreadID
   var context: HostContext?
   var name: String
-  var backtrace: Backtrace
+  var backtrace: SymbolicatedBacktrace
 }
 
 class Target {
@@ -68,6 +68,8 @@ class Target {
 
   var task: mach_port_t
   var images: [Backtrace.Image] = []
+  var sharedCacheInfo: Backtrace.SharedCacheInfo
+
   var threads: [TargetThread.ThreadID:TargetThread] = [:]
 
   var signalName: String {
@@ -151,7 +153,8 @@ class Target {
 
     mcontext = mctx
 
-    images = Backtrace.captureImages()
+    images = Backtrace.captureImages(for: task)
+    sharedCacheInfo = Backtrace.captureSharedCacheInfo(for: task)
 
     fetchThreads()
   }
@@ -220,10 +223,16 @@ class Target {
         exit(1)
       }
 
+      guard let symbolicated = backtrace.symbolicated(with: images,
+                                                      sharedCacheInfo: sharedCacheInfo) else {
+        print("unable to symbolicate backtrace from context for thread \(ndx)")
+        exit(1)
+      }
+
       threads[info.thread_id] = TargetThread(id: info.thread_id,
                                              context: ctx,
                                              name: threadName,
-                                             backtrace: backtrace)
+                                             backtrace: symbolicated)
 
       mach_port_deallocate(mach_task_self_, ports[Int(ndx)])
     }

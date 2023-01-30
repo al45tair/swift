@@ -505,6 +505,9 @@ const char * const environmentVarsToPassThrough[] = {
   "DYLD_LIBRARY_PATH",
   "DYLD_FRAMEWORK_PATH",
   "PATH",
+  "TERM",
+  "LANG",
+  "HOME"
 };
 
 #define BACKTRACE_MAX_ENV_VARS lengthof(environmentVarsToPassThrough)
@@ -516,6 +519,11 @@ _swift_backtraceSetupEnvironment()
   char *penv = swiftBacktraceEnv;
 
   std::memset(swiftBacktraceEnv, 0, sizeof(swiftBacktraceEnv));
+
+  // We definitely don't want this on in the swift-backtrace program
+  std::memcpy(penv, "SWIFT_BACKTRACING=enable=no", 28);
+  penv += 28;
+  remaining -= 28;
 
   for (unsigned n = 0; n < BACKTRACE_MAX_ENV_VARS; ++n) {
     const char *name = environmentVarsToPassThrough[n];
@@ -534,6 +542,8 @@ _swift_backtraceSetupEnvironment()
       std::memcpy(penv, value, valueLen);
       penv += valueLen;
       *penv++ = 0;
+
+      remaining -= totalLen;
     }
   }
 

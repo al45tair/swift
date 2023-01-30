@@ -17,6 +17,9 @@
 
 import Swift
 
+@_implementationOnly import _SwiftBacktracingShims
+@_implementationOnly import CoreFoundation
+
 /// A symbolicated backtrace
 public struct SymbolicatedBacktrace: CustomStringConvertible {
   /// The `Backtrace` from which this was constructed
@@ -70,9 +73,6 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
 
   /// Represents a symbol we've located
   public class Symbol: CustomStringConvertible {
-    /// The address that was looked-up.
-    public var address: Backtrace.Address
-
     /// The index of the image in which the symbol for this address is located.
     public var imageIndex: Int
 
@@ -92,9 +92,8 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     public var sourceLocation: SourceLocation?
 
     /// Construct a new Symbol.
-    public init(address: Backtrace.Address, imageIndex: Int, imageName: String,
+    public init(imageIndex: Int, imageName: String,
                 rawName: String, offset: Int, sourceLocation: SourceLocation?) {
-      self.address = address
       self.imageIndex = imageIndex
       self.imageName = imageName
       self.rawName = rawName
@@ -122,7 +121,7 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
 
       let location: String
       if let sourceLocation = sourceLocation {
-        location = "at \(sourceLocation)"
+        location = " at \(sourceLocation)"
       } else {
         location = ""
       }
@@ -137,27 +136,187 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
   /// A list of images found in the process.
   public var images: [Backtrace.Image]
 
-  /// Construct a SymbolicatedBacktrace from a backtrace and a list of images.
-  internal init(backtrace: Backtrace, images: [Backtrace.Image]?) {
-    self.backtrace = backtrace
+  /// Shared cache information.
+  public var sharedCacheInfo: Backtrace.SharedCacheInfo
 
-    if let images = images {
-      self.images = images
-    } else if let images = backtrace.images {
-      self.images = images
-    } else {
-      self.images = Backtrace.captureImages()
+  /// Construct a SymbolicatedBacktrace from a backtrace and a list of images.
+  private init(backtrace: Backtrace, images: [Backtrace.Image],
+               sharedCacheInfo: Backtrace.SharedCacheInfo,
+               frames: [Frame]) {
+    self.backtrace = backtrace
+    self.images = images
+    self.sharedCacheInfo = sharedCacheInfo
+    self.frames = frames
+  }
+
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  /// Convert a build ID to a CFUUIDBytes.
+  private static func uuidBytesFromBuildID(_ buildID: [UInt8]) -> CFUUIDBytes {
+    var result = CFUUIDBytes()
+    withUnsafeMutablePointer(to: &result) {
+      $0.withMemoryRebound(to: UInt8.self,
+                           capacity: MemoryLayout<CFUUIDBytes>.size) {
+        let bp = UnsafeMutableBufferPointer(start: $0,
+                                            count: MemoryLayout<CFUUIDBytes>.size)
+        _ = bp.initialize(from: buildID)
+      }
+    }
+    return result
+  }
+
+  /// Create a symbolicator.
+  private static func withSymbolicator<T>(images: [Backtrace.Image],
+                                          sharedCacheInfo: Backtrace.SharedCacheInfo,
+                                          fn: (CSSymbolicatorRef) throws -> T) rethrows -> T {
+    let binaryImageList = images.map{ image in
+      BinaryImageInformation(
+        base: image.baseAddress,
+        extent: image.endOfText,
+        uuid: uuidBytesFromBuildID(image.buildID!),
+        arch: HostContext.coreSymbolicationArchitecture,
+        path: image.path,
+        relocations: [
+          BinaryRelocationInformation(
+            base: image.baseAddress,
+            extent: image.endOfText,
+            name: "__TEXT"
+          )
+        ],
+        flags: 0
+      )
     }
 
-    /// ###TODO: Symbolicate
-    self.frames = []
+    let symbolicator = CSSymbolicatorCreateWithBinaryImageList(
+      binaryImageList, 0, nil
+    )
+
+    defer { CSRelease(symbolicator) }
+
+    return try fn(symbolicator)
+  }
+  #endif
+
+  /// Actually symbolicate.
+  internal static func symbolicate(backtrace: Backtrace,
+                                   images: [Backtrace.Image]?,
+                                   sharedCacheInfo: Backtrace.SharedCacheInfo?)
+    -> SymbolicatedBacktrace? {
+
+    let theImages: [Backtrace.Image]
+    if let images = images {
+      theImages = images
+    } else if let images = backtrace.images {
+      theImages = images
+    } else {
+      theImages = Backtrace.captureImages()
+    }
+
+    let theCacheInfo: Backtrace.SharedCacheInfo
+    if let sharedCacheInfo = sharedCacheInfo {
+      theCacheInfo = sharedCacheInfo
+    } else if let sharedCacheInfo = backtrace.sharedCacheInfo {
+      theCacheInfo = sharedCacheInfo
+    } else {
+      theCacheInfo = Backtrace.captureSharedCacheInfo()
+    }
+
+    var frames: [Frame] = []
+
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    withSymbolicator(images: theImages,
+                     sharedCacheInfo: theCacheInfo) { symbolicator in
+      for frame in backtrace.frames {
+        switch frame {
+          case .omittedFrames(_), .truncated:
+            print("  is omitted/truncated")
+            frames.append(Frame(captured: frame, symbol: nil))
+          default:
+            let address = frame.adjustedProgramCounter
+            let owner
+              = CSSymbolicatorGetSymbolOwnerWithAddressAtTime(symbolicator,
+                                                              address,
+                                                              kCSBeginningOfTime)
+
+            if CSIsNull(owner) {
+              frames.append(Frame(captured: frame, symbol: nil))
+            } else {
+              let symbol = CSSymbolOwnerGetSymbolWithAddress(owner, address)
+
+              let theSymbol: Symbol
+
+              if CSIsNull(symbol) {
+                frames.append(Frame(captured: frame, symbol: nil))
+              } else {
+                let rawName = CSSymbolGetMangledName(symbol) ?? ""
+                let name = CSSymbolGetName(symbol) ?? ""
+                let range = CSSymbolGetRange(symbol)
+
+                // ###TODO: inline frames
+
+                let sourceInfo = CSSymbolOwnerGetSourceInfoWithAddress(owner,
+                                                                       address)
+                let location: SourceLocation?
+                if !CSIsNull(sourceInfo) {
+                  let path = CSSourceInfoGetPath(sourceInfo) ?? ""
+                  let line = CSSourceInfoGetLineNumber(sourceInfo)
+                  let column = CSSourceInfoGetColumn(sourceInfo)
+
+                  location = SourceLocation(
+                    path: path,
+                    line: Int(line),
+                    column: Int(column)
+                  )
+                } else {
+                  location = nil
+                }
+
+                let imageBase = CSSymbolOwnerGetBaseAddress(owner)
+                var imageIndex = -1
+                var imageName = ""
+                for (ndx, image) in theImages.enumerated() {
+                  if image.baseAddress == imageBase {
+                    imageIndex = ndx
+                    imageName = image.name
+                    break
+                  }
+                }
+
+                theSymbol = Symbol(imageIndex: imageIndex,
+                                   imageName: imageName,
+                                   rawName: rawName,
+                                   offset: Int(address - range.location),
+                                   sourceLocation: location)
+                theSymbol.name = name
+
+                frames.append(Frame(captured: frame, symbol: theSymbol))
+              }
+            }
+        }
+      }
+    }
+    #else
+    frames = backtrace.frames.map{ Frame(captured: $0, symbol: nil) }
+    #endif
+
+    return SymbolicatedBacktrace(backtrace: backtrace,
+                                 images: theImages,
+                                 sharedCacheInfo: theCacheInfo,
+                                 frames: frames)
   }
 
   /// Provide a textual version of the backtrace.
   public var description: String {
     var lines: [String] = []
-    for (n, frame) in frames.enumerated() {
+
+    var n = 0
+    for frame in frames {
       lines.append("\(n)\t\(frame)")
+      switch frame.captured {
+        case let .omittedFrames(count):
+          n += count
+        default:
+          n += 1
+      }
     }
 
     lines.append("")
@@ -166,6 +325,15 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     for (n, image) in images.enumerated() {
       lines.append("\(n)\t\(image)")
     }
+
+    #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+    lines.append("")
+    lines.append("Shared Cache:")
+    lines.append("")
+    lines.append("    UUID: \(hex(sharedCacheInfo.uuid))")
+    lines.append("    Base: \(hex(sharedCacheInfo.baseAddress))")
+    lines.append("  Active: \(!sharedCacheInfo.noCache)")
+    #endif
 
     return lines.joined(separator: "\n")
   }

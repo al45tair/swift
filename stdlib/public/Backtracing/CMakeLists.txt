@@ -17,6 +17,7 @@ set(swift_backtracing_link_libraries
 set(BACKTRACING_SOURCES
   Backtrace.swift
   Context.swift
+  CoreSymbolication.swift
   FramePointerUnwinder.swift
   MemoryReader.swift
   Registers.swift

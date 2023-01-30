@@ -159,7 +159,6 @@ Generate a backtrace for the parent process.
   }
 
   static func main() {
-
     // Parse the command line arguments; we can't use swift-argument-parser
     // from here because that would create a dependency problem, so we do
     // it manually.
@@ -268,7 +267,7 @@ Generate a backtrace for the parent process.
       print("swift-backtrace: unable to get target")
       return
     }
-    
+
     guard let crashingThread = target.threads[target.crashingThread] else {
       print("swift-backtrace: unable to find crashing thread")
       return
@@ -281,6 +280,8 @@ Generate a backtrace for the parent process.
             Fault address: \(hex(target.faultAddress))
 
             """)
+
+    print(crashingThread.backtrace)
   }
 
   static func interactWithUser() {

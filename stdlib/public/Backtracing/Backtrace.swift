@@ -90,7 +90,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     ///    2: frame 98
     ///    3: frame 97
     ///    4: frame 96
-    ///    5: ...       <----- discontinuity
+    ///    5: ...       <----- omittedFrames(92)
     ///    6: frame 3
     ///    7: frame 2
     ///    8: frame 1
@@ -99,7 +99,10 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     /// Note that the limit *includes* the discontinuity.
     ///
     /// This is good for handling cases involving deep recursion.
-    case discontinuity
+    case omittedFrames(Int)
+
+    /// Indicates a discontinuity of unknown length.
+    case truncated
 
     /// The adjusted program counter to use for symbolication.
     public var adjustedProgramCounter: Address {
@@ -114,7 +117,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
           return addr
         case let .asyncResumePoint(addr):
           return addr
-        case .discontinuity:
+        case .omittedFrames(_), .truncated:
           return 0
       }
     }
@@ -132,14 +135,14 @@ public struct Backtrace: CustomStringConvertible, Sendable {
           return "\(hex(addr)) [async]"
         case let .asyncResumePoint(addr):
           return "\(hex(addr)) [async]"
-        case .discontinuity:
+        case .omittedFrames(_), .truncated:
           return "..."
       }
     }
   }
 
   /// Represents an image loaded in the process's address space
-  public struct Image: Sendable {
+  public struct Image: CustomStringConvertible, Sendable {
     /// The name of the image (e.g. libswiftCore.dylib).
     public var name: String
 
@@ -153,12 +156,15 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     /// The base address of the image.
     public var baseAddress: Backtrace.Address
 
+    /// The end of the text segment in this image.
+    public var endOfText: Backtrace.Address
+
     /// Provide a textual description of an Image.
     public var description: String {
       if let buildID = self.buildID {
-        return "\(hex(baseAddress)) \(hex(buildID)) \(name) \(path)"
+        return "\(hex(baseAddress))-\(hex(endOfText)) \(hex(buildID)) \(name) \(path)"
       } else {
-        return "\(hex(baseAddress)) <no build ID> \(name) \(path)"
+        return "\(hex(baseAddress))-\(hex(endOfText)) <no build ID> \(name) \(path)"
       }
     }
   }
@@ -173,6 +179,27 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   /// not, in which case it will be empty and you can capture an image list
   /// separately yourself using `captureImages()`.
   public var images: [Image]?
+
+  /// Holds information about the shared cache.
+  public struct SharedCacheInfo: Sendable {
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    /// The UUID from the shared cache.
+    public var uuid: [UInt8]
+
+    /// The base address of the shared cache.
+    public var baseAddress: Backtrace.Address
+
+    /// Says whether there is in fact a shared cache.
+    public var noCache: Bool
+    #endif
+  }
+
+  /// Information about the shared cache.
+  ///
+  /// Holds information about the shared cache.  On Darwin only, this is
+  /// required for symbolication.  On non-Darwin platforms it will always
+  /// be `nil`.
+  public var sharedCacheInfo: SharedCacheInfo?
 
   /// Capture a backtrace from the current program location.
   ///
@@ -223,7 +250,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
         if let limit = limit {
           if limit == 0 {
-            return Backtrace(frames: [Frame.discontinuity])
+            return Backtrace(frames: [.truncated])
           }
 
           let realTop = top < limit ? top : limit - 1
@@ -244,7 +271,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
             if let _ = iterator.next() {
               // More frames than we were asked for; replace the last
               // one with a discontinuity
-              frames[limit - 1] = .discontinuity
+              frames[limit - 1] = .truncated
             }
 
             return Backtrace(frames: frames)
@@ -256,6 +283,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
               let topSection = limit - realTop
               var topFrames: [Frame] = []
               var topNdx = 0
+              var omittedFrames = 0
 
               topFrames.reserveCapacity(realTop)
               topFrames.insert(contentsOf: frames.suffix(realTop - 1), at: 0)
@@ -264,6 +292,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
               while let frame = iterator.next() {
                 topFrames[topNdx] = frame
                 topNdx += 1
+                omittedFrames += 1
                 if topNdx >= realTop {
                   topNdx = 0
                 }
@@ -273,7 +302,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
               // the contents of the circular buffer.
               let firstPart = realTop - topNdx
               let secondPart = topNdx
-              frames[topSection - 1] = .discontinuity
+              frames[topSection - 1] = .omittedFrames(omittedFrames)
 
               frames.replaceSubrange(topSection..<(topSection+firstPart),
                                      with: topFrames.suffix(firstPart))
@@ -301,47 +330,104 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     #endif
   }
 
-  @_spi(Internal)
-  public static func captureImages(for process: Any) -> [Image] {
-    var images: [Image] = []
-
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
-    let task = process as! task_t
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  private static func withDyldProcessInfo<T>(for task: task_t,
+                                             fn: (OpaquePointer?) throws -> T)
+    rethrows -> T {
     var kret: kern_return_t = KERN_SUCCESS
     let dyldInfo = _dyld_process_info_create(task, 0, &kret)
 
     if kret != KERN_SUCCESS {
-      print("warning: unable to create dyld process info; cannot fetch images")
-      return []
+      fatalError("error: cannot create dyld process info")
     }
 
     defer {
       _dyld_process_info_release(dyldInfo)
     }
 
-    _dyld_process_info_for_each_image(dyldInfo) {
-      (machHeaderAddress, uuid, path) in
+    return try fn(dyldInfo)
+  }
+  #endif
 
-      if let path = path, let uuid = uuid {
-        let pathString = String(cString: path)
-        let theUUID = Array(UnsafeBufferPointer(start: uuid,
+  @_spi(Internal)
+  public static func captureImages(for process: Any) -> [Image] {
+    var images: [Image] = []
+
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    let task = process as! task_t
+
+    withDyldProcessInfo(for: task){ dyldInfo in
+      _dyld_process_info_for_each_image(dyldInfo) {
+        (machHeaderAddress, uuid, path) in
+
+        if let path = path, let uuid = uuid {
+          let pathString = String(cString: path)
+          let theUUID = Array(UnsafeBufferPointer(start: uuid,
                                                 count: MemoryLayout<uuid_t>.size))
-        let name: String
-        if let slashIndex = pathString.lastIndex(of: "/") {
-          name = String(pathString.suffix(from:
-                                            pathString.index(after:slashIndex)))
-        } else {
-          name = pathString
+          let name: String
+          if let slashIndex = pathString.lastIndex(of: "/") {
+            name = String(pathString.suffix(from:
+                                              pathString.index(after:slashIndex)))
+          } else {
+            name = pathString
+          }
+
+          // Find the end of the __TEXT segment
+          var endOfText = machHeaderAddress + 4096
+
+          _dyld_process_info_for_each_segment(dyldInfo, machHeaderAddress){
+            address, size, name in
+
+            if let name = String(validatingUTF8: name!), name == "__TEXT" {
+              endOfText = address + size
+            }
+          }
+
+          images.append(Image(name: name,
+                              path: pathString,
+                              buildID: theUUID,
+                              baseAddress: machHeaderAddress,
+                              endOfText: endOfText))
         }
-        images.append(Image(name: name,
-                            path: pathString,
-                            buildID: theUUID,
-                            baseAddress: machHeaderAddress))
       }
     }
     #endif // os(macOS) || os(iOS) || os(watchOS)
 
     return images.sorted(by: { $0.baseAddress < $1.baseAddress })
+  }
+
+  /// Capture shared cache information.
+  ///
+  /// @returns A `SharedCacheInfo`.
+  public static func captureSharedCacheInfo() -> SharedCacheInfo {
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    return captureSharedCacheInfo(for: mach_task_self_)
+    #else
+    return SharedCacheInfo()
+    #endif
+  }
+
+  @_spi(Internal)
+  public static func captureSharedCacheInfo(for t: Any) -> SharedCacheInfo {
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    let task = t as! task_t
+    return withDyldProcessInfo(for: task){ dyldInfo in
+      var cacheInfo = dyld_process_cache_info()
+      _dyld_process_info_get_cache(dyldInfo, &cacheInfo)
+      let theUUID = withUnsafePointer(to: cacheInfo.cacheUUID){
+        $0.withMemoryRebound(to: UInt8.self,
+                             capacity: MemoryLayout<uuid_t>.size) {
+          Array(UnsafeBufferPointer(start: $0,
+                                    count: MemoryLayout<uuid_t>.size))
+        }
+      }
+      return SharedCacheInfo(uuid: theUUID,
+                             baseAddress: cacheInfo.cacheBaseAddress,
+                             noCache: cacheInfo.noCache)
+    }
+    #else // !os(Darwin)
+    return SharedCacheInfo()
+    #endif
   }
 
   /// Return a symbolicated version of the backtrace.
@@ -352,15 +438,27 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   ///               used; otherwise we will capture images at this point.
   ///
   /// @returns A new `SymbolicatedBacktrace`.
-  public func symbolicated(with images: [Image]? = nil) -> SymbolicatedBacktrace {
-    return SymbolicatedBacktrace(backtrace: self, images: images)
+  public func symbolicated(with images: [Image]? = nil,
+                           sharedCacheInfo: SharedCacheInfo? = nil)
+    -> SymbolicatedBacktrace? {
+    return SymbolicatedBacktrace.symbolicate(backtrace: self,
+                                             images: images,
+                                             sharedCacheInfo: sharedCacheInfo)
   }
 
   /// Provide a textual version of the backtrace.
   public var description: String {
     var lines: [String] = []
-    for (n, frame) in frames.enumerated() {
+
+    var n = 0
+    for frame in frames {
       lines.append("\(n)\t\(frame)")
+      switch frame {
+        case let .omittedFrames(count):
+          n += count
+        default:
+          n += 1
+      }
     }
 
     if let images = images {
@@ -371,6 +469,16 @@ public struct Backtrace: CustomStringConvertible, Sendable {
         lines.append("\(n)\t\(image)")
       }
     }
+
+    #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+    if let sharedCacheInfo = sharedCacheInfo {
+      lines.append("")
+      lines.append("Shared Cache:")
+      lines.append("")
+      lines.append("  UUID: \(hex(sharedCacheInfo.uuid))")
+      lines.append("  Base: \(hex(sharedCacheInfo.baseAddress))")
+    }
+    #endif
 
     return lines.joined(separator: "\n")
   }

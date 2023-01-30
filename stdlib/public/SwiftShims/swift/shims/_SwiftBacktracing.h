@@ -24,8 +24,10 @@
 #endif
 
 #if TARGET_OS_OSX
+#include <mach/machine.h>
 #include <mach/task.h>
-#include <mach/vm_param.h>
+
+#include <CoreFoundation/CFUUID.h>
 
 #include <libproc.h>
 #endif
@@ -141,6 +143,10 @@ struct darwin_x86_64_mcontext {
 
 /* DANGER!  These are SPI.  They may change (or vanish) at short notice, may
    not work how you expect, and are generally dangerous to use. */
+// ###FIXME: Remove the 0
+#if 0 && __has_include(<mach-o/dyld_process_info.h>)
+  #include <mach-o/dyld_process_info.h>
+#else
 struct dyld_process_cache_info {
   uuid_t      cacheUUID;
   uint64_t    cacheBaseAddress;
@@ -155,6 +161,91 @@ extern void  _dyld_process_info_release(dyld_process_info info);
 extern void  _dyld_process_info_retain(dyld_process_info info);
 extern void  _dyld_process_info_get_cache(dyld_process_info info, dyld_process_cache_info* cacheInfo);
 extern void _dyld_process_info_for_each_image(dyld_process_info info, void (^callback)(uint64_t machHeaderAddress, const uuid_t uuid, const char* path));
+extern void _dyld_process_info_for_each_segment(dyld_process_info info, uint64_t machHeaderAddress, void (^callback)(uint64_t segmentAddress, uint64_t segmentSize, const char* segmentName));
+#endif
+
+/* DANGER!  CoreSymbolication is a private framework.  This is all SPI. */
+// ###FIXME: Remove the 0
+struct _CSArchitecture {
+    cpu_type_t		cpu_type;
+    cpu_subtype_t	cpu_subtype;
+};
+
+typedef struct _CSArchitecture CSArchitecture;
+
+static const CSArchitecture kCSArchitectureI386 = { CPU_TYPE_I386, CPU_SUBTYPE_I386_ALL };
+static const CSArchitecture kCSArchitectureX86_64 = { CPU_TYPE_I386|CPU_ARCH_ABI64, CPU_SUBTYPE_I386_ALL };
+static const CSArchitecture kCSArchitectureArm64 =   { CPU_TYPE_ARM | CPU_ARCH_ABI64, CPU_SUBTYPE_ARM64_ALL };
+static const CSArchitecture kCSArchitectureArm64_32 =   { CPU_TYPE_ARM | CPU_ARCH_ABI64_32, CPU_SUBTYPE_ARM64_ALL };
+static const CSArchitecture kCSArchitectureArmV7K =  { CPU_TYPE_ARM, CPU_SUBTYPE_ARM_V7K };
+
+typedef struct _CSBinaryRelocationInformation {
+  mach_vm_address_t base;
+  mach_vm_address_t extent;
+  char name[17];
+} CSBinaryRelocationInformation;
+
+typedef struct _CSBinaryImageInformation {
+  mach_vm_address_t base;
+  mach_vm_address_t extent;
+  CFUUIDBytes uuid;
+  CSArchitecture arch;
+  const char *path;
+  CSBinaryRelocationInformation *relocations;
+  uint32_t relocationCount;
+  uint32_t flags;
+} CSBinaryImageInformation;
+
+typedef uint64_t CSMachineTime;
+
+static const CSMachineTime kCSBeginningOfTime = 0;
+static const CSMachineTime kCSEndOfTime = INT64_MAX;
+static const CSMachineTime kCSNow = INT64_MAX + 1ULL;
+static const CSMachineTime kCSAllTimes = INT64_MAX + 2ULL;
+
+struct _CSTypeRef {
+  uintptr_t _opaque_1;
+  uintptr_t _opaque_2;
+};
+
+typedef struct _CSTypeRef CSTypeRef;
+
+typedef CSTypeRef CSNullRef;
+typedef CSTypeRef CSSymbolicatorRef;
+typedef CSTypeRef CSSymbolOwnerRef;
+typedef CSTypeRef CSSymbolRef;
+typedef CSTypeRef CSSourceInfoRef;
+
+static const CSNullRef kCSNull = { 0, 0 };
+
+typedef void (^CSSymbolOwnerIterator)(CSSymbolOwnerRef owner);
+typedef void (^CSStackFrameIterator)(CSSymbolRef symbol, CSSourceInfoRef info);
+
+typedef struct _CSNotificationData {
+    CSSymbolicatorRef symbolicator;
+    union {
+        struct Ping {
+            uint32_t value;
+        } ping;
+
+        struct DyldLoad {
+            CSSymbolOwnerRef symbolOwner;
+        } dyldLoad;
+
+        struct DyldUnload {
+            CSSymbolOwnerRef symbolOwner;
+        } dyldUnload;
+    } u;
+} CSNotificationData;
+
+typedef void (^CSNotificationBlock)(uint32_t type, CSNotificationData data);
+
+struct _CSRange {
+  mach_vm_address_t	location;
+  mach_vm_size_t	length;
+};
+
+typedef struct _CSRange CSRange;
 
 #endif // TARGET_OS_OSX
 
