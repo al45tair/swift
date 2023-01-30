@@ -432,18 +432,27 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
   /// Return a symbolicated version of the backtrace.
   ///
-  /// @param with   Specifies the set of images to use for symbolication.
+  /// @param images Specifies the set of images to use for symbolication.
   ///               If `nil`, the function will look to see if the `Backtrace`
   ///               has already captured images.  If it has, those will be
   ///               used; otherwise we will capture images at this point.
   ///
+  /// @param sharedCacheInfo  Provides information about the location and
+  ///                         identity of the shared cache, if applicable.
+  ///
+  /// @param showInlineFrames If `true` and we know how on the platform we're
+  ///                         running on, add virtual frames to show inline
+  ///                         function calls.
+  ///
   /// @returns A new `SymbolicatedBacktrace`.
   public func symbolicated(with images: [Image]? = nil,
-                           sharedCacheInfo: SharedCacheInfo? = nil)
+                           sharedCacheInfo: SharedCacheInfo? = nil,
+                           showInlineFrames: Bool = true)
     -> SymbolicatedBacktrace? {
     return SymbolicatedBacktrace.symbolicate(backtrace: self,
                                              images: images,
-                                             sharedCacheInfo: sharedCacheInfo)
+                                             sharedCacheInfo: sharedCacheInfo,
+                                             showInlineFrames: showInlineFrames)
   }
 
   /// Provide a textual version of the backtrace.

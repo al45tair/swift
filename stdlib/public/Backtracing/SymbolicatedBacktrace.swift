@@ -61,10 +61,14 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     /// The result of doing a symbol lookup for this frame.
     public var symbol: Symbol?
 
+    /// If `true`, then this frame was inlined
+    public var inlined: Bool = false
+
     /// A textual description of this frame.
     public var description: String {
       if let symbol = symbol {
-        return "\(captured) \(symbol)"
+        let isInlined = inlined ? " [inlined]": ""
+        return "\(captured)\(isInlined) \(symbol)"
       } else {
         return captured.description
       }
@@ -194,12 +198,66 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
 
     return try fn(symbolicator)
   }
+
+  /// Generate a frame from a symbol and source info pair
+  private static func buildFrame(from capturedFrame: Backtrace.Frame,
+                                 with owner: CSSymbolOwnerRef,
+                                 isInline: Bool,
+                                 symbol: CSSymbolRef,
+                                 sourceInfo: CSSourceInfoRef,
+                                 images: [Backtrace.Image]) -> Frame {
+    if CSIsNull(symbol) {
+      return Frame(captured: capturedFrame, symbol: nil)
+    }
+
+    let address = capturedFrame.adjustedProgramCounter
+    let rawName = CSSymbolGetMangledName(symbol) ?? ""
+    let name = CSSymbolGetName(symbol) ?? rawName
+    let range = CSSymbolGetRange(symbol)
+
+    let location: SourceLocation?
+
+    if !CSIsNull(sourceInfo) {
+      let path = CSSourceInfoGetPath(sourceInfo) ?? ""
+      let line = CSSourceInfoGetLineNumber(sourceInfo)
+      let column = CSSourceInfoGetColumn(sourceInfo)
+
+      location = SourceLocation(
+        path: path,
+        line: Int(line),
+        column: Int(column)
+      )
+    } else {
+      location = nil
+    }
+
+    let imageBase = CSSymbolOwnerGetBaseAddress(owner)
+    var imageIndex = -1
+    var imageName = ""
+    for (ndx, image) in images.enumerated() {
+      if image.baseAddress == imageBase {
+        imageIndex = ndx
+        imageName = image.name
+        break
+      }
+    }
+
+    let theSymbol = Symbol(imageIndex: imageIndex,
+                           imageName: imageName,
+                           rawName: rawName,
+                           offset: Int(address - range.location),
+                           sourceLocation: location)
+    theSymbol.name = name
+
+    return Frame(captured: capturedFrame, symbol: theSymbol, inlined: isInline)
+  }
   #endif
 
   /// Actually symbolicate.
   internal static func symbolicate(backtrace: Backtrace,
                                    images: [Backtrace.Image]?,
-                                   sharedCacheInfo: Backtrace.SharedCacheInfo?)
+                                   sharedCacheInfo: Backtrace.SharedCacheInfo?,
+                                   showInlineFrames: Bool)
     -> SymbolicatedBacktrace? {
 
     let theImages: [Backtrace.Image]
@@ -228,7 +286,6 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
       for frame in backtrace.frames {
         switch frame {
           case .omittedFrames(_), .truncated:
-            print("  is omitted/truncated")
             frames.append(Frame(captured: frame, symbol: nil))
           default:
             let address = frame.adjustedProgramCounter
@@ -239,57 +296,36 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
 
             if CSIsNull(owner) {
               frames.append(Frame(captured: frame, symbol: nil))
+            } else if showInlineFrames {
+              // These present in *reverse* order (i.e. the real one first,
+              // then the inlined frames from callee to caller).
+              var pos = frames.count
+              var first = true
+
+              _ = CSSymbolOwnerForEachStackFrameAtAddress(owner, address){
+                symbol, sourceInfo in
+
+                frames.insert(buildFrame(from: frame,
+                                         with: owner,
+                                         isInline: !first,
+                                         symbol: symbol,
+                                         sourceInfo: sourceInfo,
+                                         images: theImages),
+                              at: pos)
+
+                first = false
+              }
             } else {
               let symbol = CSSymbolOwnerGetSymbolWithAddress(owner, address)
+              let sourceInfo = CSSymbolOwnerGetSourceInfoWithAddress(owner,
+                                                                     address)
 
-              let theSymbol: Symbol
-
-              if CSIsNull(symbol) {
-                frames.append(Frame(captured: frame, symbol: nil))
-              } else {
-                let rawName = CSSymbolGetMangledName(symbol) ?? ""
-                let name = CSSymbolGetName(symbol) ?? ""
-                let range = CSSymbolGetRange(symbol)
-
-                // ###TODO: inline frames
-
-                let sourceInfo = CSSymbolOwnerGetSourceInfoWithAddress(owner,
-                                                                       address)
-                let location: SourceLocation?
-                if !CSIsNull(sourceInfo) {
-                  let path = CSSourceInfoGetPath(sourceInfo) ?? ""
-                  let line = CSSourceInfoGetLineNumber(sourceInfo)
-                  let column = CSSourceInfoGetColumn(sourceInfo)
-
-                  location = SourceLocation(
-                    path: path,
-                    line: Int(line),
-                    column: Int(column)
-                  )
-                } else {
-                  location = nil
-                }
-
-                let imageBase = CSSymbolOwnerGetBaseAddress(owner)
-                var imageIndex = -1
-                var imageName = ""
-                for (ndx, image) in theImages.enumerated() {
-                  if image.baseAddress == imageBase {
-                    imageIndex = ndx
-                    imageName = image.name
-                    break
-                  }
-                }
-
-                theSymbol = Symbol(imageIndex: imageIndex,
-                                   imageName: imageName,
-                                   rawName: rawName,
-                                   offset: Int(address - range.location),
-                                   sourceLocation: location)
-                theSymbol.name = name
-
-                frames.append(Frame(captured: frame, symbol: theSymbol))
-              }
+              frames.append(buildFrame(from: frame,
+                                       with: owner,
+                                       isInline: false,
+                                       symbol: symbol,
+                                       sourceInfo: sourceInfo,
+                                       images: theImages))
             }
         }
       }
