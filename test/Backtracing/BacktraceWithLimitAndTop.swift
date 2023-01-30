@@ -6,6 +6,8 @@
 // REQUIRES: executable_test
 // REQUIRES: OS=macosx || OS=ios
 
+import _Backtracing
+
 func doFrames(_ count: Int, limit: Int, top: Int) {
   if count <= 0 {
     let backtrace = try! Backtrace.capture(limit: limit, top: top)
@@ -25,24 +27,24 @@ struct BacktraceWithTop {
     // CHECK-NEXT: 3{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
     // CHECK-NEXT: 4{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
     // CHECK-NEXT: 5{{[ \t]+}}...
-    // CHECK-NEXT: 6{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 7{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 8{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 9{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
     doFrames(1000, limit: 10, top: 4)
 
     print("")
 
     // CHECK:      0{{[ \t]+}}...
-    // CHECK-NEXT: 1{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 2{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 3{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 4{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 5{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 6{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 7{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 8{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
-    // CHECK-NEXT: 9{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
+    // CHECK-NEXT: {{[0-9]+[ \t]+}}0x{{[0-9a-f]+}} [ra]
     doFrames(1000, limit: 10, top: 10)
 
     print("")

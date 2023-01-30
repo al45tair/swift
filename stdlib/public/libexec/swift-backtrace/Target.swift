@@ -20,6 +20,7 @@
 import Darwin
 import Darwin.Mach
 
+import _Backtracing
 @_spi(Internal) import _Backtracing
 @_spi(Contexts) import _Backtracing
 @_spi(MemoryReaders) import _Backtracing

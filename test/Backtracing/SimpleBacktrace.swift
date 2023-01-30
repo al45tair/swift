@@ -1,5 +1,5 @@
 // RUN: %empty-directory(%t)
-// RUN: %target-build-swift %s -parse-as-library -Onone -o %t/SimpleBacktrace
+// RUN: %target-build-swift %s -Xfrontend -enable-implicit-backtracing-module-import -parse-as-library -Onone -o %t/SimpleBacktrace
 // RUN: %target-codesign %t/SimpleBacktrace
 // RUN: %target-run %t/SimpleBacktrace | %FileCheck %s
 

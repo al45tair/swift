@@ -126,6 +126,7 @@ struct TestOptions {
   bool measureInstructions = false;
   bool DisableImplicitConcurrencyModuleImport = false;
   bool DisableImplicitStringProcessingModuleImport = false;
+  bool EnableImplicitBacktracingModuleImport = false;
   bool DisableImplicitBacktracingModuleImport = false;
   llvm::Optional<unsigned> CompletionCheckDependencyInterval;
   unsigned repeatRequest = 1;

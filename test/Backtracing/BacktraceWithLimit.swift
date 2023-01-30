@@ -6,6 +6,8 @@
 // REQUIRES: executable_test
 // REQUIRES: OS=macosx || OS=ios
 
+import _Backtracing
+
 func doFrames(_ count: Int) {
   if count <= 0 {
     let backtrace = try! Backtrace.capture(limit: 10)
