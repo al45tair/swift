@@ -2765,7 +2765,7 @@ function(add_swift_target_executable name)
       endif()
 
       if(SWIFTEXE_TARGET_BUILD_WITH_STDLIB)
-        add_dependencies("swift-test-stdlib${VARIANT_SUFFIX}" ${VARIANT_NAME})
+        add_dependencies("swift-stdlib${VARIANT_SUFFIX}" ${VARIANT_NAME})
       endif()
 
       # Swift compiles depend on swift modules, while links depend on
@@ -2891,6 +2891,10 @@ function(add_swift_target_executable name)
                              ${UNIVERSAL_NAME}
                            ${codesign_arg}
                            ${THIN_INPUT_TARGETS})
+
+    if(SWIFTEXE_TARGET_BUILD_WITH_STDLIB)
+      add_dependencies("swift-stdlib" ${lipo_target})
+    endif()
 
     # Determine the subdirectory where this executable will be installed
     set(resource_dir_sdk_subdir "${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
