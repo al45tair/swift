@@ -21,7 +21,7 @@ func doFrames(_ count: Int, limit: Int, top: Int) {
 @main
 struct BacktraceWithTop {
   static func main() {
-    // CHECK:      0{{[ \t]+}}0x{{[0-9a-f]+}}
+    // CHECK:      0{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
     // CHECK-NEXT: 1{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
     // CHECK-NEXT: 2{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
     // CHECK-NEXT: 3{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
@@ -49,7 +49,7 @@ struct BacktraceWithTop {
 
     print("")
 
-    // CHECK:      0{{[ \t]+}}0x{{[0-9a-f]+}}
+    // CHECK:      0{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
     // CHECK-NEXT: 1{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
     // CHECK-NEXT: 2{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
     // CHECK-NEXT: 3{{[ \t]+}}0x{{[0-9a-f]+}} [ra]

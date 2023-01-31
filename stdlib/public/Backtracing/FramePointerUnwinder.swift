@@ -18,7 +18,7 @@ import Swift
 
 // @available(SwiftStdlib 5.1, *)
 @_silgen_name("swift_task_getCurrent")
-func _getCurrentAsyncTask() -> Builtin.NativeObject?
+func _getCurrentAsyncTask() -> UnsafeRawPointer?
 
 @_spi(Unwinders)
 public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, IteratorProtocol {
@@ -43,11 +43,11 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
     reader = memoryReader
   }
 
-  private func isAsyncFrame() -> Bool {
+  private func isAsyncFrame(_ storedFp: Address) -> Bool {
     #if (os(macOS) || os(iOS) || os(watchOS)) && (arch(arm64) || arch(arm64_32) || arch(x86_64))
     // On Darwin, we borrow a bit of the frame pointer to indicate async
     // stack frames
-    return (fp & (1 << 60)) != 0 && _getCurrentAsyncTask() != nil
+    return (storedFp & (1 << 60)) != 0 && _getCurrentAsyncTask() != nil
     #else
     return false
     #endif
@@ -65,92 +65,81 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   }
 
   public mutating func next() -> Backtrace.Frame? {
-    if isAsync {
-      var next: Address = 0
-      let strippedCtx
-        = Address(Context.stripPtrAuth(address: Context.Address(asyncContext)))
-
-      if strippedCtx == 0 {
-        return nil
-      }
-
-      #if arch(arm64_32)
-
-      // On arm64_32, the two pointers at the start of the context are 32-bit,
-      // although the stack layout is identical to vanilla arm64
-      do {
-        var next32 = try reader.fetch<UInt32>(from: strippedCtx)
-        var pc32 = try reader.fetch<UInt32>(from: strippedCtx + 4)
-
-        next = Address(next32)
-        pc = Address(pc32)
-      } catch {
-        return nil
-      }
-      #else
-
-      // Otherwise it's two 64-bit words
-      do {
-        next = try reader.fetch<Address>(from: strippedCtx)
-        pc = try reader.fetch<Address>(from: strippedCtx + 8)
-      } catch {
-        return nil
-      }
-
-      #endif
-
-      asyncContext = next
-
-      return .asyncResumePoint(Backtrace.Address(pc))
-    }
-
     if first {
       first = false
-      isAsync = isAsyncFrame()
-
-      if isAsync {
-        if !fetchAsyncContext() {
-          return nil
-        }
-
-        return .programCounterInAsync(Backtrace.Address(pc))
-      }
-
       return .programCounter(Backtrace.Address(pc))
     }
 
-    // Try to read the next fp/pc pair
-    var next: Address = 0
-    let strippedFp = Context.stripPtrAuth(address: Context.Address(fp))
+    if !isAsync {
+      // Try to read the next fp/pc pair
+      var next: Address = 0
+      let strippedFp = Context.stripPtrAuth(address: Context.Address(fp))
 
-    if strippedFp == 0
-     || !Context.isAlignedForStack(framePointer: strippedFp) {
+      if strippedFp == 0
+           || !Context.isAlignedForStack(framePointer: strippedFp) {
+        return nil
+      }
+
+      do {
+        pc = try reader.fetch<Address>(from: (Address(strippedFp)
+                                                + Address(MemoryLayout<Address>.size)))
+        next = try reader.fetch<Address>(from: Address(strippedFp))
+      } catch {
+        return nil
+      }
+
+      if next <= fp {
+        return nil
+      }
+
+      if !isAsyncFrame(next) {
+        fp = next
+        return .returnAddress(Backtrace.Address(pc))
+      }
+
+      isAsync = true
+      if !fetchAsyncContext() {
+        return nil
+      }
+    }
+
+    // If we get here, we're in async mode
+
+    var next: Address = 0
+    let strippedCtx
+      = Address(Context.stripPtrAuth(address: Context.Address(asyncContext)))
+
+    if strippedCtx == 0 {
       return nil
     }
 
+    #if arch(arm64_32)
+
+    // On arm64_32, the two pointers at the start of the context are 32-bit,
+    // although the stack layout is identical to vanilla arm64
     do {
-      pc = try reader.fetch<Address>(from: (Address(strippedFp)
-                                              + Address(MemoryLayout<Address>.size)))
-      next = try reader.fetch<Address>(from: Address(strippedFp))
+      var next32 = try reader.fetch<UInt32>(from: strippedCtx)
+      var pc32 = try reader.fetch<UInt32>(from: strippedCtx + 4)
+
+      next = Address(next32)
+      pc = Address(pc32)
+    } catch {
+      return nil
+    }
+    #else
+
+    // Otherwise it's two 64-bit words
+    do {
+      next = try reader.fetch<Address>(from: strippedCtx)
+      pc = try reader.fetch<Address>(from: strippedCtx + 8)
     } catch {
       return nil
     }
 
-    if next <= fp {
-      return nil
-    }
+    #endif
 
-    fp = next
-    isAsync = isAsyncFrame()
+    asyncContext = next
 
-    if isAsync {
-      if !fetchAsyncContext() {
-        return nil
-      }
-
-      return .returnAddressInAsync(Backtrace.Address(pc))
-    }
-
-    return .returnAddress(Backtrace.Address(pc))
+    return .asyncResumePoint(Backtrace.Address(pc))
   }
 }

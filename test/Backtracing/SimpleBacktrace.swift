@@ -4,7 +4,7 @@
 // RUN: %target-run %t/SimpleBacktrace | %FileCheck %s
 
 // REQUIRES: executable_test
-// REQUIRES: OS=macosx || OS=ios
+// REQUIRES: OS=macosx || OS=iOS || OS=watchOS || OS=tvOS
 
 func level1() {
   level2()
@@ -25,7 +25,7 @@ func level4() {
 func level5() {
   let backtrace = try! Backtrace.capture()
 
-  // CHECK:      0{{[ \t]+}}0x{{[0-9a-f]+}}
+  // CHECK:      0{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
   // CHECK-NEXT: 1{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
   // CHECK-NEXT: 2{{[ \t]+}}0x{{[0-9a-f]+}} [ra]
   // CHECK-NEXT: 3{{[ \t]+}}0x{{[0-9a-f]+}} [ra]

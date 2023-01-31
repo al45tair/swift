@@ -220,16 +220,19 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   ///                      top of the stack.
   ///
   /// @returns A new `Backtrace` struct.
+  @inline(never)
   public static func capture(algorithm: UnwindAlgorithm = .auto,
                              limit: Int? = 4096,
                              offset: Int = 0,
                              top: Int = 0) throws -> Backtrace {
+    // N.B. We use offset+1 here to skip this frame, rather than inlining
+    //      this code into the client.
     return try HostContext.withCurrentContext { ctx in
       try capture(from: ctx,
                   using: UnsafeLocalMemoryReader(),
                   algorithm: algorithm,
                   limit: limit,
-                  offset: offset,
+                  offset: offset + 1,
                   top: top)
     }
   }
