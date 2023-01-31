@@ -94,14 +94,24 @@ class Target {
     var ports: mach_port_array_t? = nil
     var portCount: mach_msg_type_number_t = 0
 
-    let kr = mach_ports_lookup(mach_task_self_, &ports, &portCount)
+    // For some reason, we can't pass a task read port this way, but we
+    // *can* pass the control port.  So do that and then ask for a read port
+    // before immediately dropping the control port from this process.
 
+    let kr = mach_ports_lookup(mach_task_self_, &ports, &portCount)
     if kr != KERN_SUCCESS {
       return nil
     }
 
     if let ports = ports, portCount != 0 {
-      return ports[0]
+      var taskPort: mach_port_t = 0
+      let kr = task_get_special_port(ports[0], TASK_READ_PORT, &taskPort)
+      if kr != KERN_SUCCESS {
+        mach_port_deallocate(mach_task_self_, ports[0])
+        return nil
+      }
+      mach_port_deallocate(mach_task_self_, ports[0])
+      return taskPort
     } else {
       return nil
     }
@@ -128,8 +138,6 @@ class Target {
       print("swift-backtrace: couldn't fetch parent task")
       exit(1)
     }
-
-    task_suspend(task)
 
     reader = RemoteMemoryReader(task: task)
 

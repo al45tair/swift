@@ -38,6 +38,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <spawn.h>
+#include <unistd.h>
 
 #include "swift/Runtime/Backtrace.h"
 
@@ -50,9 +51,13 @@ using namespace swift::runtime::backtrace;
 namespace {
 
 void handle_fatal_signal(int signum, siginfo_t *pinfo, void *uctx);
+void suspend_other_threads();
+void resume_other_threads();
 bool run_backtracer(void);
 
 swift::CrashInfo crashInfo;
+
+os_unfair_lock crashLock = OS_UNFAIR_LOCK_INIT;
 
 const int signalsToHandle[] = {
   SIGQUIT,
@@ -111,11 +116,74 @@ _swift_installCrashHandler()
 namespace {
 
 void
+suspend_other_threads()
+{
+  os_unfair_lock_lock(&crashLock);
+
+  thread_t self = mach_thread_self();
+  thread_act_array_t threads;
+  mach_msg_type_number_t count = 0;
+
+  kern_return_t kr = task_threads(mach_task_self(), &threads, &count);
+
+  if (kr != KERN_SUCCESS)
+    return;
+
+  for (unsigned n = 0; n < count; ++n) {
+    if (threads[n] == self)
+      continue;
+
+    // Ignore the results of these two; if they fail there's nothing we can do
+    (void)thread_resume(threads[n]);
+    (void)mach_port_deallocate(mach_task_self(), threads[n]);
+  }
+
+  vm_deallocate(mach_task_self(),
+                (vm_address_t)threads,
+                count * sizeof(threads[0]));
+
+  os_unfair_lock_unlock(&crashLock);
+}
+
+void
+resume_other_threads()
+{
+  os_unfair_lock_lock(&crashLock);
+
+  thread_t self = mach_thread_self();
+  thread_act_array_t threads;
+  mach_msg_type_number_t count = 0;
+
+  kern_return_t kr = task_threads(mach_task_self(), &threads, &count);
+
+  if (kr != KERN_SUCCESS)
+    return;
+
+  for (unsigned n = 0; n < count; ++n) {
+    if (threads[n] == self)
+      continue;
+
+    // Ignore the results of these two; if they fail there's nothing we can do
+    (void)thread_resume(threads[n]);
+    (void)mach_port_deallocate(mach_task_self(), threads[n]);
+  }
+
+  vm_deallocate(mach_task_self(),
+                (vm_address_t)threads,
+                count * sizeof(threads[0]));
+
+  os_unfair_lock_unlock(&crashLock);
+}
+
+void
 handle_fatal_signal(int signum,
                     siginfo_t *pinfo,
                     void *uctx)
 {
   int old_err = errno;
+
+  // Prevent this from exploding if more than one thread gets here at once
+  suspend_other_threads();
 
   // Remove our signal handlers; crashes should kill us here
   for (unsigned n = 0; n < lengthof(signalsToHandle); ++n)
@@ -141,6 +209,9 @@ handle_fatal_signal(int signum,
   /* Start the backtracer; this will suspend the process, so there's no need
      to try to suspend other threads from here. */
   run_backtracer();
+
+  // Restart the other threads
+  resume_other_threads();
 
   // Restore errno and exit (to crash)
   errno = old_err;
@@ -225,7 +296,20 @@ format_unsigned(unsigned u, char buffer[22])
 bool
 run_backtracer()
 {
-  // Forward our task port to the backtracer
+  // Forward our task port to the backtracer; we use the same technique that
+  // libxpc uses to forward one of its ports on fork(), except that we aren't
+  // going to call fork() so libxpc's atfork handler won't run and we'll get
+  // to send the task port to the child.
+  //
+  // I would very much like to send a task *read* port, but for some reason
+  // that doesn't work here.  As a result, what we do instead is send the
+  // control port but have the backtracer use it to get the read port and
+  // immediately drop the control port.
+  //
+  // That *should* be safe enough in practice; if someone could replace the
+  // backtracer, then they can also replace libswiftCore, and since we do
+  // this early on in backtracer start-up, the control port won't be valid
+  // by the time anyone gets to try anything nefarious.
   mach_port_t ports[] = {
     mach_task_self(),
   };

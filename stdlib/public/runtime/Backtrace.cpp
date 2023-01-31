@@ -599,8 +599,12 @@ _swift_spawnBacktracer(const ArgChar * const *argv)
                         &backtraceFileActions, &backtraceSpawnAttrs,
                         const_cast<char * const *>(argv),
                         const_cast<char * const *>(env));
-  if (ret < 0)
+  if (ret < 0) {
+    write(STDERR_FILENO, "unable to spawn backtracer\n", 27);
     return false;
+  }
+
+  write(STDERR_FILENO, "0\n", 2);
 
   int wstatus;
 
@@ -608,8 +612,10 @@ _swift_spawnBacktracer(const ArgChar * const *argv)
     ret = waitpid(child, &wstatus, 0);
   } while (ret < 0 && errno == EINTR);
 
+  write(STDERR_FILENO, "1\n", 2);
+
   if (WIFEXITED(wstatus))
-    return WEXITSTATUS(wstatus);
+    return WEXITSTATUS(wstatus) == 0;
 
   return false;
 
