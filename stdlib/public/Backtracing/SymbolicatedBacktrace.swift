@@ -299,7 +299,7 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
             } else if showInlineFrames {
               // These present in *reverse* order (i.e. the real one first,
               // then the inlined frames from callee to caller).
-              var pos = frames.count
+              let pos = frames.count
               var first = true
 
               _ = CSSymbolOwnerForEachStackFrameAtAddress(owner, address){
