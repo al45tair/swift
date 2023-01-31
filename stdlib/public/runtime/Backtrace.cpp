@@ -101,6 +101,11 @@ BacktraceInitializer backtraceInitializer;
 
 SWIFT_ALLOWED_RUNTIME_GLOBAL_CTOR_END
 
+#if TARGET_OS_OSX
+posix_spawnattr_t backtraceSpawnAttrs;
+posix_spawn_file_actions_t backtraceFileActions;
+#endif
+
 #if SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
 
 // We need swiftBacktracePath to be aligned on a page boundary, and it also
@@ -184,6 +189,19 @@ BacktraceInitializer::BacktraceInitializer() {
 
   if (backtracing)
     _swift_parseBacktracingSettings(backtracing);
+
+#if TARGET_OS_OSX
+  // Make sure that we don't pass on setuid privileges, and that all fds
+  // are closed except for stdin/stdout/stderr.
+  posix_spawnattr_init(&backtraceSpawnAttrs);
+  posix_spawnattr_setflags(&backtraceSpawnAttrs,
+                           POSIX_SPAWN_RESETIDS | POSIX_SPAWN_CLOEXEC_DEFAULT);
+
+  posix_spawn_file_actions_init(&backtraceFileActions);
+  posix_spawn_file_actions_addinherit_np(&backtraceFileActions, STDIN_FILENO);
+  posix_spawn_file_actions_addinherit_np(&backtraceFileActions, STDOUT_FILENO);
+  posix_spawn_file_actions_addinherit_np(&backtraceFileActions, STDERR_FILENO);
+#endif
 
 #if !SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
   if (_swift_backtraceSettings.enabled) {
@@ -577,8 +595,8 @@ _swift_spawnBacktracer(const ArgChar * const *argv)
 
   // SUSv3 says argv and envp are "completely constant" and that the reason
   // posix_spawn() et al use char * const * is for compatibility.
-
-  int ret = posix_spawn(&child, swiftBacktracePath, NULL, NULL,
+  int ret = posix_spawn(&child, swiftBacktracePath,
+                        &backtraceFileActions, &backtraceSpawnAttrs,
                         const_cast<char * const *>(argv),
                         const_cast<char * const *>(env));
   if (ret < 0)
