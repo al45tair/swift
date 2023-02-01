@@ -88,6 +88,9 @@ _swift_installCrashHandler()
   if (ss.ss_sp == MAP_FAILED)
     return errno;
 
+  if (sigaltstack(&ss, 0) < 0)
+    return errno;
+
   // Now register signal handlers
   struct sigaction sa;
 
