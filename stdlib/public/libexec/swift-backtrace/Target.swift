@@ -71,7 +71,7 @@ class Target {
   var images: [Backtrace.Image] = []
   var sharedCacheInfo: Backtrace.SharedCacheInfo
 
-  var threads: [TargetThread.ThreadID:TargetThread] = [:]
+  var threads: [TargetThread] = []
 
   var signalName: String {
     switch signal {
@@ -83,6 +83,20 @@ class Target {
       case UInt64(SIGSEGV): return "SIGSEGV"
       case UInt64(SIGTRAP): return "SIGTRAP"
       default: return "\(signal)"
+    }
+  }
+
+  var signalDescription: String {
+    switch signal {
+      case UInt64(SIGQUIT): return "Terminated"
+      case UInt64(SIGABRT): return "Aborted"
+      case UInt64(SIGBUS): return "Bus error"
+      case UInt64(SIGFPE): return "Floating point exception"
+      case UInt64(SIGILL): return "Illegal instruction"
+      case UInt64(SIGSEGV): return "Bad pointer dereference"
+      case UInt64(SIGTRAP): return "System trap"
+      default:
+        return "Signal \(signal)"
     }
   }
 
@@ -238,10 +252,10 @@ class Target {
         exit(1)
       }
 
-      threads[info.thread_id] = TargetThread(id: info.thread_id,
-                                             context: ctx,
-                                             name: threadName,
-                                             backtrace: symbolicated)
+      threads.append(TargetThread(id: info.thread_id,
+                                  context: ctx,
+                                  name: threadName,
+                                  backtrace: symbolicated))
 
       mach_port_deallocate(mach_task_self_, ports[Int(ndx)])
     }

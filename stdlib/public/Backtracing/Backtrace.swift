@@ -222,9 +222,9 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   /// @returns A new `Backtrace` struct.
   @inline(never)
   public static func capture(algorithm: UnwindAlgorithm = .auto,
-                             limit: Int? = 4096,
+                             limit: Int? = 64,
                              offset: Int = 0,
-                             top: Int = 0) throws -> Backtrace {
+                             top: Int = 16) throws -> Backtrace {
     // N.B. We use offset+1 here to skip this frame, rather than inlining
     //      this code into the client.
     return try HostContext.withCurrentContext { ctx in
@@ -241,9 +241,9 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   public static func capture(from context: some Context,
                              using memoryReader: some MemoryReader,
                              algorithm: UnwindAlgorithm = .auto,
-                             limit: Int? = 4096,
+                             limit: Int? = 64,
                              offset: Int = 0,
-                             top: Int = 0) throws -> Backtrace {
+                             top: Int = 16) throws -> Backtrace {
     switch algorithm {
       // ###FIXME: .precise should be using DWARF EH
       case .auto, .fast, .precise:

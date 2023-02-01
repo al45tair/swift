@@ -30,6 +30,11 @@ private let coreSymbolicationPath =
   "/System/Library/PrivateFrameworks/CoreSymbolication.framework/CoreSymbolication"
 private let coreSymbolicationHandle = dlopen(coreSymbolicationPath, RTLD_LAZY)!
 
+private let crashReporterSupportPath =
+  "/System/Library/PrivateFrameworks/CrashReporterSupport.framework/CrashReporterSupport"
+
+private let crashReporterSupportHandle = dlopen(crashReporterSupportPath, RTLD_LAZY)!
+
 private func symbol<T>(_ handle: UnsafeMutableRawPointer, _ name: String) -> T {
   guard let result = dlsym(handle, name) else {
     fatalError("Unable to look up \(name) in CoreSymbolication")
@@ -38,6 +43,10 @@ private func symbol<T>(_ handle: UnsafeMutableRawPointer, _ name: String) -> T {
 }
 
 private enum Sym {
+  // CRCopySanitizedPath
+  static let CRCopySanitizedPath: @convention(c) (CFString, CFIndex) -> CFString =
+    symbol(crashReporterSupportHandle, "CRCopySanitizedPath")
+
   // Base functionality
   static let CSRetain: @convention(c) (CSTypeRef) -> CSTypeRef =
     symbol(coreSymbolicationHandle, "CSRetain")
@@ -100,6 +109,12 @@ private enum Sym {
   static let CSSourceInfoGetColumn:
     @convention(c) (CSSourceInfoRef) -> UInt32 =
     symbol(coreSymbolicationHandle, "CSSourceInfoGetColumn")
+}
+
+// .. Crash Reporter support ...................................................
+
+func CRCopySanitizedPath(_ path: String, _ options: Int) -> String {
+  return Sym.CRCopySanitizedPath(path as! CFString, CFIndex(options)) as! String
 }
 
 // .. Base functionality .......................................................

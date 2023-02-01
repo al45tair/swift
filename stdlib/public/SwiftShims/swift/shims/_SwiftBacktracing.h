@@ -28,6 +28,7 @@
 #include <mach/task.h>
 
 #include <CoreFoundation/CFUUID.h>
+#include <CoreFoundation/CFString.h>
 
 #include <libproc.h>
 #endif
@@ -246,6 +247,16 @@ struct _CSRange {
 };
 
 typedef struct _CSRange CSRange;
+
+/* DANGER! This is also SPI */
+enum {
+  kCRSanitizePathGlobLocalHomeDirectories = 1,
+  kCRSanitizePathGlobLocalVolumes = 2,
+  kCRSanitizePathGlobAllTypes = 0xff,
+
+  kCRSanitizePathNormalize = 0x100 << 0,
+  kCRSanitizePathKeepFile = 0x100 << 1,
+};
 
 #endif // TARGET_OS_OSX
 

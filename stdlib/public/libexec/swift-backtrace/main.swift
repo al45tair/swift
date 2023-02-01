@@ -19,6 +19,8 @@ import Glibc
 import MSVCRT
 #endif
 
+@_spi(Formatting) import _Backtracing
+
 @main
 internal struct SwiftBacktrace {
   enum UnwindAlgorithm {
@@ -39,6 +41,7 @@ internal struct SwiftBacktrace {
   static var args = Arguments()
 
   static var target: Target? = nil
+  static var currentThread: Int = 0
 
   static func usage() {
     print("""
@@ -194,6 +197,8 @@ Generate a backtrace for the parent process.
 
     printCrashLog()
 
+    print("")
+
     if args.interactive {
       if let ch = waitForKey("Press space to interact, or any other key to quit",
                              timeout: args.timeout),
@@ -262,29 +267,86 @@ Generate a backtrace for the parent process.
   }
   #endif
 
+  static func getCrashingThread() -> (Int, TargetThread)? {
+    guard let target = target else {
+      return nil
+    }
+
+    for (ndx, thread) in target.threads.enumerated() {
+      if thread.id == target.crashingThread {
+        return (ndx, thread)
+      }
+    }
+    return nil
+  }
+
   static func printCrashLog() {
     guard let target = target else {
       print("swift-backtrace: unable to get target")
       return
     }
 
-    guard let crashingThread = target.threads[target.crashingThread] else {
+    guard let (crashingThreadNdx, crashingThread) = getCrashingThread() else {
       print("swift-backtrace: unable to find crashing thread")
       return
     }
 
-    print("""
-            Process \(target.pid) crashed in thread \(target.crashingThread) "\(crashingThread.name)"
+    currentThread = crashingThreadNdx
 
-            Signal: \(target.signal) \(target.signalName)
-            Fault address: \(hex(target.faultAddress))
+    let description: String
 
-            """)
+    if let frame = crashingThread.backtrace.frames.first,
+       frame.isRuntimeFailure {
+      let text: Substring
+      let symbolName = frame.symbol!.rawName
 
-    print(crashingThread.backtrace)
+      if symbolName.hasPrefix("_") {
+        text = symbolName.dropFirst()
+      } else {
+        text = symbolName.dropFirst(0)
+      }
+
+      description = String(text)
+    } else {
+      description = "Program crashed: \(target.signalDescription) at \(hex(target.faultAddress))"
+    }
+
+    print("")
+    if args.color {
+      print("\u{1b}[91m\(description)\u{1b}[0m")
+    } else {
+      print("*** \(description) ***")
+    }
+    print("")
+
+    var terminalSize = winsize(ws_row: 24, ws_col: 80,
+                               ws_xpixel: 1024, ws_ypixel: 768)
+    _ = ioctl(0, TIOCGWINSZ, &terminalSize)
+
+    if crashingThread.name.isEmpty {
+      print("Thread \(crashingThreadNdx) crashed:\n")
+    } else {
+      print("Thread \(crashingThreadNdx) \"\(crashingThread.name)\" crashed:\n")
+    }
+
+    let theme: BacktraceFormattingThemeProtocol = args.color ? BacktraceFormatter.Themes.color : BacktraceFormatter.Themes.plain
+    let formatter = BacktraceFormatter(.theme(theme)
+                                         .showAddresses(false)
+                                         .showSourceCode(true)
+                                         .showFrameAttributes(false)
+                                         .skipRuntimeFailures(true)
+                                         .sanitizePaths(false)
+                                         .width(Int(terminalSize.ws_col)))
+    let formatted = formatter.format(crashingThread.backtrace)
+
+    print(formatted)
   }
 
   static func interactWithUser() {
+    guard let target = target else {
+      return
+    }
+
     while true {
       print(">>> ", terminator: "")
       guard let input = readLine() else {
@@ -301,17 +363,75 @@ Generate a backtrace for the parent process.
       switch cmd[0].lowercased() {
         case "exit", "quit":
           return
+        case "bt", "backtrace":
+          break
+        case "thread":
+          if cmd.count >= 2 {
+            if let newThreadNdx = Int(cmd[1]),
+               newThreadNdx >= 0 && newThreadNdx < target.threads.count {
+              currentThread = newThreadNdx
+            } else {
+              print("Bad thread index '\(cmd[1])'")
+              break
+            }
+          }
+
+          let thread = target.threads[currentThread]
+          let backtrace = thread.backtrace
+
+          print("Thread \(currentThread) id=\(thread.id) \(thread.name)")
+
+          let firstFrame: SymbolicatedBacktrace.Frame
+          if backtrace.frames[0].isRuntimeFailure {
+            firstFrame = backtrace.frames[1]
+          } else {
+            firstFrame = backtrace.frames[0]
+          }
+
+          print("    \(firstFrame)")
+          break
+        case "reg", "registers":
+          break
+        case "mem", "memory":
+          break
+        case "process", "threads":
+          print("Process \(target.pid) \"\(target.name)\" has \(target.threads.count) thread(s):")
+          for (n, thread) in target.threads.enumerated() {
+            let backtrace = thread.backtrace
+
+            print("\n  \(n) id=\(thread.id) \(thread.name)")
+
+            let firstFrame: SymbolicatedBacktrace.Frame
+            if backtrace.frames[0].isRuntimeFailure {
+              firstFrame = backtrace.frames[1]
+            } else {
+              firstFrame = backtrace.frames[0]
+            }
+
+            print("    \(firstFrame)")
+          }
         case "help":
           print("""
                   Available commands:
 
-                  exit   Exit interaction, allowing program to crash normally.
-                  quit   Synonym for exit
-
+                  backtrace  Display a backtrace.
+                  bt         Synonym for backtrace.
+                  exit       Exit interaction, allowing program to crash normally.
+                  help       Display help.
+                  mem        Synonym for memory.
+                  memory     Inspect memory.
+                  process    Show information about the process.
+                  quit       Synonym for exit.
+                  reg        Synonym for registers.
+                  registers  Display the registers.
+                  thread     Show or set the current thread.
+                  threads    Synonym for process.
                   """)
         default:
           print("unknown command '\(cmd[0])'")
       }
+
+      print("")
     }
   }
 }

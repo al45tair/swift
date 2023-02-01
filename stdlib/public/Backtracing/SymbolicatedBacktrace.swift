@@ -31,7 +31,7 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
   /// debug information and may not correspond to the current state of
   /// the filesystem --- it might even hold a path that only works
   /// from an entirely different machine.
-  public struct SourceLocation: CustomStringConvertible, Sendable {
+  public struct SourceLocation: CustomStringConvertible, Sendable, Hashable {
     /// The path of the source file.
     public var path: String
 
@@ -64,6 +64,9 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     /// If `true`, then this frame was inlined
     public var inlined: Bool = false
 
+    /// `true` if this frame represents a Swift runtime failure.
+    public var isRuntimeFailure: Bool { symbol?.isRuntimeFailure ?? false }
+
     /// A textual description of this frame.
     public var description: String {
       if let symbol = symbol {
@@ -95,6 +98,25 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     /// The source location, if available.
     public var sourceLocation: SourceLocation?
 
+    /// True if this symbol represents a Swift runtime failure
+    public var isRuntimeFailure: Bool {
+      guard let sourceLocation = sourceLocation else {
+        return false
+      }
+
+      let symName: Substring
+      if rawName.hasPrefix("_") {
+        symName = rawName.dropFirst()
+      } else {
+        symName = rawName.dropFirst(0)
+      }
+
+      return symName.hasPrefix("Swift runtime failure: ")
+        && sourceLocation.line == 0
+        && sourceLocation.column == 0
+        && sourceLocation.path.hasSuffix("<compiler-generated>")
+    }
+
     /// Construct a new Symbol.
     public init(imageIndex: Int, imageName: String,
                 rawName: String, offset: Int, sourceLocation: SourceLocation?) {
@@ -107,7 +129,9 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
 
     /// Demangle the raw name, if possible.
     private func demangleRawName() -> String {
-      // ###FIXME: Implement this
+      // We don't actually need this function on macOS because we're using
+      // CoreSymbolication, which demangles the name when it does the lookup
+      // anyway.  We will need it for Linux and Windows though.
       return rawName
     }
 
@@ -211,14 +235,14 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     }
 
     let address = capturedFrame.adjustedProgramCounter
-    let rawName = CSSymbolGetMangledName(symbol) ?? ""
+    let rawName = CSSymbolGetMangledName(symbol) ?? "<unknown>"
     let name = CSSymbolGetName(symbol) ?? rawName
     let range = CSSymbolGetRange(symbol)
 
     let location: SourceLocation?
 
     if !CSIsNull(sourceInfo) {
-      let path = CSSourceInfoGetPath(sourceInfo) ?? ""
+      let path = CSSourceInfoGetPath(sourceInfo) ?? "<unknown>"
       let line = CSSourceInfoGetLineNumber(sourceInfo)
       let column = CSSourceInfoGetColumn(sourceInfo)
 
