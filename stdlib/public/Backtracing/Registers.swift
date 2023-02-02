@@ -20,7 +20,15 @@ import Swift
 // .. x86-64 .................................................................
 
 // https://gitlab.com/x86-psABIs/x86-64-ABI
-@_spi(Registers) public enum X86_64Register: Int, Comparable {
+@_spi(Registers) public enum X86_64Register: Int, Strideable, Comparable {
+
+  public func advanced(by n: Int) -> X86_64Register {
+    return X86_64Register(rawValue: self.rawValue + n)!
+  }
+
+  public func distance(to other: X86_64Register) -> Int {
+    return other.rawValue - self.rawValue
+  }
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.rawValue < rhs.rawValue
@@ -122,7 +130,15 @@ case k7 = 125
 // .. i386 ...................................................................
 
 // https://gitlab.com/x86-psABIs/i386-ABI
-@_spi(Registers) public enum I386Register: Int, Comparable {
+@_spi(Registers) public enum I386Register: Int, Strideable, Comparable {
+
+  public func advanced(by n: Int) -> I386Register {
+    return I386Register(rawValue: self.rawValue + n)!
+  }
+
+  public func distance(to other: I386Register) -> Int {
+    return other.rawValue - self.rawValue
+  }
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.rawValue < rhs.rawValue
@@ -183,7 +199,15 @@ case gs_base = 94
 // .. arm64 ..................................................................
 
 // https://github.com/ARM-software/abi-aa/tree/main/aadwarf64
-@_spi(Registers) public enum ARM64Register: Int, Comparable {
+@_spi(Registers) public enum ARM64Register: Int, Strideable, Comparable {
+
+  public func advanced(by n: Int) -> ARM64Register {
+    return ARM64Register(rawValue: self.rawValue + n)!
+  }
+
+  public func distance(to other: ARM64Register) -> Int {
+    return other.rawValue - self.rawValue
+  }
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.rawValue < rhs.rawValue
@@ -317,7 +341,15 @@ case z31 = 127
 // .. arm ....................................................................
 
 // https://github.com/ARM-software/abi-aa/tree/main/aadwarf32
-@_spi(Registers) public enum ARMRegister: Int, Comparable {
+@_spi(Registers) public enum ARMRegister: Int, Strideable, Comparable {
+
+  public func advanced(by n: Int) -> ARMRegister {
+    return ARMRegister(rawValue: self.rawValue + n)!
+  }
+
+  public func distance(to other: ARMRegister) -> Int {
+    return other.rawValue - self.rawValue
+  }
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
     return lhs.rawValue < rhs.rawValue

@@ -65,7 +65,9 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     public var inlined: Bool = false
 
     /// `true` if this frame represents a Swift runtime failure.
-    public var isRuntimeFailure: Bool { symbol?.isRuntimeFailure ?? false }
+    public var isSwiftRuntimeFailure: Bool {
+      symbol?.isSwiftRuntimeFailure ?? false
+    }
 
     /// A textual description of this frame.
     public var description: String {
@@ -99,7 +101,7 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     public var sourceLocation: SourceLocation?
 
     /// True if this symbol represents a Swift runtime failure
-    public var isRuntimeFailure: Bool {
+    public var isSwiftRuntimeFailure: Bool {
       guard let sourceLocation = sourceLocation else {
         return false
       }
@@ -166,6 +168,24 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
 
   /// Shared cache information.
   public var sharedCacheInfo: Backtrace.SharedCacheInfo
+
+  /// True if this backtrace is a Swift runtime failure.
+  public var isSwiftRuntimeFailure: Bool {
+    guard let frame = frames.first else { return false }
+    return frame.isSwiftRuntimeFailure
+  }
+
+  /// If this backtrace is a Swift runtime failure, return the description.
+  public var swiftRuntimeFailure: String? {
+    guard let frame = frames.first else { return nil }
+    if !frame.isSwiftRuntimeFailure { return nil }
+
+    let symbolName = frame.symbol!.rawName
+    if symbolName.hasPrefix("_") {
+      return String(symbolName.dropFirst())
+    }
+    return symbolName
+  }
 
   /// Construct a SymbolicatedBacktrace from a backtrace and a list of images.
   private init(backtrace: Backtrace, images: [Backtrace.Image],

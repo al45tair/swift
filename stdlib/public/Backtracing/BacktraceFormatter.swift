@@ -41,6 +41,9 @@ public protocol BacktraceFormattingThemeProtocol {
   func crashedLine(_ s: String) -> String
   func crashLocation(_ s: String) -> String
   func imageName(_ s: String) -> String
+  func imageAddressRange(_ s: String) -> String
+  func imageBuildID(_ s: String) -> String
+  func imagePath(_ s: String) -> String
 }
 
 extension BacktraceFormattingThemeProtocol {
@@ -55,6 +58,9 @@ extension BacktraceFormattingThemeProtocol {
   public func crashedLine(_ s: String) -> String { return s }
   public func crashLocation(_ s: String) -> String { return s }
   public func imageName(_ s: String) -> String { return s }
+  public func imageAddressRange(_ s: String) -> String { return s }
+  public func imageBuildID(_ s: String) -> String { return s }
+  public func imagePath(_ s: String) -> String { return s}
 }
 
 /// Options for backtrace formatting.
@@ -301,14 +307,10 @@ private func measure<S: StringProtocol>(_ s: S) -> Int {
 }
 
 /// Pad the given string to the given width using spaces.
-private enum Alignment {
-  case left
-  case right
-  case center
-}
-
 private func pad(_ s: String, to width: Int,
-                 aligned alignment: Alignment = .left) -> String {
+                 aligned alignment: BacktraceFormatter.Alignment = .left)
+  -> String {
+
   let currentWidth = measure(s)
   let padding = max(width - currentWidth, 0)
 
@@ -420,6 +422,15 @@ public struct BacktraceFormatter {
       public func imageName(_ s: String) -> String {
         return "\u{1b}[36m\(s)\u{1b}[39m"
       }
+      public func imageAddressRange(_ s: String) -> String {
+        return "\u{1b}[32m\(s)\u{1b}[39m"
+      }
+      public func imageBuildID(_ s: String) -> String {
+        return "\u{1b}[37m\(s)\u{1b}[39m"
+      }
+      public func imagePath(_ s: String) -> String {
+        return "\u{1b}[90m\(s)\u{1b}[39m"
+      }
     }
 
     public static let plain = PlainTheme()
@@ -430,9 +441,15 @@ public struct BacktraceFormatter {
     self.options = options
   }
 
-  enum TableRow {
+  public enum TableRow {
     case columns([String])
     case raw(String)
+  }
+
+  public enum Alignment {
+    case left
+    case right
+    case center
   }
 
   /// Output a table with each column nicely aligned.
@@ -441,10 +458,10 @@ public struct BacktraceFormatter {
   ///              of table columns.
   ///
   /// @result A `String` containing the formatted table.
-  private static func formatTable(_ rows: [TableRow],
+  public static func formatTable(_ rows: [TableRow],
                                   alignments: [Alignment] = []) -> String {
     // Work out how many columns we have
-    let columns = rows.map{
+    let colCount = rows.map{
       if case let .columns(columns) = $0 {
         return columns.count
       } else {
@@ -453,7 +470,7 @@ public struct BacktraceFormatter {
     }.reduce(0, max)
 
     // Now compute their widths
-    var widths = Array(repeating: 0, count: columns)
+    var widths = Array(repeating: 0, count: colCount)
     for row in rows {
       if case let .columns(columns) = row {
         for (n, width) in columns.lazy.map(measure).enumerated() {
@@ -469,7 +486,11 @@ public struct BacktraceFormatter {
         case let .columns(columns):
           let line = columns.enumerated().map{ n, column in
             let alignment = n < alignments.count ? alignments[n] : .left
-            return pad(column, to: widths[n], aligned: alignment)
+            if n == colCount - 1 && alignment == .left {
+              return column
+            } else {
+              return pad(column, to: widths[n], aligned: alignment)
+            }
           }.joined(separator: " ")
 
           lines.append(line)
@@ -481,47 +502,84 @@ public struct BacktraceFormatter {
     return lines.joined(separator: "\n")
   }
 
+  /// Format an individual frame into a list of columns.
+  ///
+  /// @param frame  The frame to format.
+  /// @param index  The frame index, if required.
+  ///
+  /// @result An array of strings, one per column.
+  public func formatColumns(frame: Backtrace.Frame,
+                            index: Int? = nil) -> [String] {
+    let pc: String
+    var attrs: [String] = []
+
+    switch frame {
+      case let .programCounter(address):
+        pc = "\(hex(address))"
+      case let .returnAddress(address):
+        pc = "\(hex(address))"
+        attrs.append("ra")
+      case let .programCounterInAsync(address):
+        pc = "\(hex(address))"
+        attrs.append("ra")
+      case let .returnAddressInAsync(address):
+        pc = "\(hex(address))"
+        attrs.append("ra")
+        attrs.append("async")
+      case let .asyncResumePoint(address):
+        pc = "\(hex(address))"
+        attrs.append("async")
+      case .omittedFrames(_), .truncated:
+        pc = "..."
+    }
+
+    var columns: [String] = []
+    if let index = index {
+      columns.append(options._theme.frameIndex("\(index)"))
+    }
+    columns.append(options._theme.programCounter(pc))
+    if options._showFrameAttributes {
+      columns.append(attrs.map(
+                       options._theme.frameAttribute
+                     ).joined(separator: " "))
+    }
+
+    return columns
+  }
+
+  /// Format a frame into a list of rows.
+  ///
+  /// @param frame  The frame to format.
+  /// @param index  The frame index, if required.
+  ///
+  /// @result An array of table rows.
+  public func formatRows(frame: Backtrace.Frame,
+                         index: Int? = nil) -> [TableRow] {
+    return [.columns(formatColumns(frame: frame, index: index))]
+  }
+
+  /// Format just one frame.
+  ///
+  /// @param frame   The frame to format.
+  /// @param index   (Optional) frame index.
+  ///
+  /// @result A `String` containing the formatted data.
+  public func format(frame: Backtrace.Frame, index: Int? = nil) -> String {
+    let rows = formatRows(frame: frame, index: index)
+    return BacktraceFormatter.formatTable(rows, alignments: [.right])
+  }
+
   /// Format the frame list from a backtrace.
   ///
   /// @param frames  The frames to format.
   ///
   /// @result A `String` containing the formatted data.
-  public func format(_ frames: [Backtrace.Frame]) -> String {
+  public func format(frames: [Backtrace.Frame]) -> String {
     var rows: [TableRow] = []
 
     var n = 0
     for frame in frames {
-      let pc: String
-      var attrs: [String] = []
-
-      switch frame {
-        case let .programCounter(address):
-          pc = "\(hex(address))"
-        case let .returnAddress(address):
-          pc = "\(hex(address))"
-          attrs.append("ra")
-        case let .programCounterInAsync(address):
-          pc = "\(hex(address))"
-          attrs.append("ra")
-        case let .returnAddressInAsync(address):
-          pc = "\(hex(address))"
-          attrs.append("ra")
-          attrs.append("async")
-        case let .asyncResumePoint(address):
-          pc = "\(hex(address))"
-          attrs.append("async")
-        case .omittedFrames(_), .truncated:
-          pc = "..."
-      }
-
-      var columns = [options._theme.frameIndex("\(n)"),
-                     options._theme.programCounter(pc)]
-      if options._showFrameAttributes {
-        columns.append(attrs.map(
-                          options._theme.frameAttribute
-                       ).joined(separator: " "))
-      }
-      rows.append(.columns(columns))
+      rows += formatRows(frame: frame, index: n)
 
       if case let .omittedFrames(count) = frame {
         n += count
@@ -538,8 +596,8 @@ public struct BacktraceFormatter {
   /// @param backtrace  The `Backtrace` object to format.
   ///
   /// @result A `String` containing the formatted data.
-  public func format(_ backtrace: Backtrace) -> String {
-    return format(backtrace.frames)
+  public func format(backtrace: Backtrace) -> String {
+    return format(frames: backtrace.frames)
   }
 
   /// Grab source lines for a symbolicated backtrace.
@@ -628,134 +686,182 @@ public struct BacktraceFormatter {
     return lines.joined(separator: "\n")
   }
 
-  /// Format the frame list from a symbolicated backtrace.
+  /// Format an individual frame into a list of columns.
   ///
-  /// @param frames  The frames to format.
+  /// @params frame  The frame to format.
   ///
-  /// @result A `String` containing the formatted data.
-  public func format(_ frames: [SymbolicatedBacktrace.Frame]) -> String {
-    var rows: [TableRow] = []
-    var sourceLocationsShown = Set<SymbolicatedBacktrace.SourceLocation>()
+  /// @result An array of strings, one per column.
+  public func formatColumns(frame: SymbolicatedBacktrace.Frame,
+                            index: Int? = nil) -> [String] {
+    let pc: String
+    var attrs: [String] = []
 
-    var n = 0
-    for frame in frames {
-      let pc: String
-      var attrs: [String] = []
+    switch frame.captured {
+      case let .programCounter(address):
+        pc = "\(hex(address))"
+      case let .returnAddress(address):
+        pc = "\(hex(address))"
+        attrs.append("ra")
+      case let .programCounterInAsync(address):
+        pc = "\(hex(address))"
+        attrs.append("ra")
+      case let .returnAddressInAsync(address):
+        pc = "\(hex(address))"
+        attrs.append("ra")
+        attrs.append("async")
+      case let .asyncResumePoint(address):
+        pc = "\(hex(address))"
+        attrs.append("async")
+      case .omittedFrames(_), .truncated:
+        pc = ""
+    }
 
-      switch frame.captured {
-        case let .programCounter(address):
-          pc = "\(hex(address))"
-        case let .returnAddress(address):
-          pc = "\(hex(address))"
-          attrs.append("ra")
-        case let .programCounterInAsync(address):
-          pc = "\(hex(address))"
-          attrs.append("ra")
-        case let .returnAddressInAsync(address):
-          pc = "\(hex(address))"
-          attrs.append("ra")
-          attrs.append("async")
-        case let .asyncResumePoint(address):
-          pc = "\(hex(address))"
-          attrs.append("async")
-        case .omittedFrames(_), .truncated:
-          pc = ""
+    if frame.inlined {
+      attrs.append("inlined")
+    }
+
+    var formattedSymbol: String? = nil
+    var hasSourceLocation = false
+
+    if let symbol = frame.symbol {
+      let displayName = options._demangle ? symbol.name : symbol.rawName
+      let themedName = options._theme.symbol(displayName)
+
+      let offset: String
+      if symbol.offset > 0 {
+        offset = options._theme.offset(" + \(symbol.offset)")
+      } else if symbol.offset < 0 {
+        offset = options._theme.offset(" - \(-symbol.offset)")
+      } else {
+        offset = ""
       }
 
-      if frame.inlined {
-        attrs.append("inlined")
-      }
-
-      var formattedSymbol: String? = nil
-      var hasSourceLocation = false
-      var isRuntimeFailure = false
-
-      if let symbol = frame.symbol {
-        let displayName = options._demangle ? symbol.name : symbol.rawName
-        let themedName = options._theme.symbol(displayName)
-
-        let offset: String
-        if symbol.offset > 0 {
-          offset = options._theme.offset(" + \(symbol.offset)")
-        } else if symbol.offset < 0 {
-          offset = options._theme.offset(" - \(-symbol.offset)")
-        } else {
-          offset = ""
-        }
-
-        let imageName: String
-        if options._showImageNames {
-          if symbol.imageIndex >= 0 {
-            imageName = " in " + options._theme.imageName(symbol.imageName)
-          } else {
-            imageName = ""
-          }
+      let imageName: String
+      if options._showImageNames {
+        if symbol.imageIndex >= 0 {
+          imageName = " in " + options._theme.imageName(symbol.imageName)
         } else {
           imageName = ""
         }
-
-        isRuntimeFailure = symbol.isRuntimeFailure
-
-        let location: String
-        if var sourceLocation = symbol.sourceLocation {
-          if options._sanitizePaths {
-            sourceLocation.path = sanitizePath(sourceLocation.path)
-          }
-          location = " at " + options._theme.sourceLocation("\(sourceLocation)")
-          hasSourceLocation = true
-        } else {
-          location = ""
-        }
-
-        formattedSymbol = "\(themedName)\(offset)\(imageName)\(location)"
-      }
-
-      if options._skipRuntimeFailures && isRuntimeFailure {
-        continue
+      } else {
+        imageName = ""
       }
 
       let location: String
-      if !hasSourceLocation || options._showAddresses {
-        let formattedPc = options._theme.programCounter(pc)
-        if let formattedSymbol = formattedSymbol {
-          location = "\(formattedPc) \(formattedSymbol)"
-        } else {
-          location = formattedPc
+      if var sourceLocation = symbol.sourceLocation {
+        if options._sanitizePaths {
+          sourceLocation.path = sanitizePath(sourceLocation.path)
         }
-      } else if let formattedSymbol = formattedSymbol {
-        location = formattedSymbol
+        location = " at " + options._theme.sourceLocation("\(sourceLocation)")
+        hasSourceLocation = true
       } else {
-        location = options._theme.programCounter(pc)
+        location = ""
       }
 
+      formattedSymbol = "\(themedName)\(offset)\(imageName)\(location)"
+    }
+
+    let location: String
+    if !hasSourceLocation || options._showAddresses {
+      let formattedPc = options._theme.programCounter(pc)
+      if let formattedSymbol = formattedSymbol {
+        location = "\(formattedPc) \(formattedSymbol)"
+      } else {
+        location = formattedPc
+      }
+    } else if let formattedSymbol = formattedSymbol {
+      location = formattedSymbol
+    } else {
+      location = options._theme.programCounter(pc)
+    }
+
+    var columns: [String] = []
+
+    if let index = index {
       let frameIndex: String
       switch frame.captured {
         case .omittedFrames(_), .truncated:
           frameIndex = options._theme.frameIndex("...")
         default:
-          frameIndex = options._theme.frameIndex("\(n)")
+          frameIndex = options._theme.frameIndex("\(index)")
+      }
+      columns.append(frameIndex)
+    }
+
+    columns.append(location)
+    if options._showFrameAttributes {
+      columns.append(attrs.map(
+                       options._theme.frameAttribute
+                     ).joined(separator: " "))
+    }
+
+    return columns
+  }
+
+  /// Format a frame into a list of rows.
+  ///
+  /// @param frame  The frame to format.
+  /// @param index  The frame index, if required.
+  ///
+  /// @result An array of table rows.
+  public func formatRows(frame: SymbolicatedBacktrace.Frame,
+                         index: Int? = nil,
+                         showSource: Bool = true) -> [TableRow] {
+    let columns = formatColumns(frame: frame, index: index)
+    var rows: [TableRow] = [.columns(columns)]
+
+    if showSource {
+      if let symbol = frame.symbol,
+         let sourceLocation = symbol.sourceLocation,
+         let lines = formattedSourceLines(from: sourceLocation) {
+        rows.append(.raw(""))
+        rows.append(.raw(lines))
+        rows.append(.raw(""))
+      }
+    }
+
+    return rows
+  }
+
+  /// Format just one frame.
+  ///
+  /// @param frame   The frame to format.
+  /// @param index   (Optional) frame index.
+  ///
+  /// @result A `String` containing the formatted data.
+  public func format(frame: SymbolicatedBacktrace.Frame,
+                     index: Int? = nil,
+                     showSource: Bool = true) -> String {
+    let rows = formatRows(frame: frame, index: index, showSource: showSource)
+    return BacktraceFormatter.formatTable(rows, alignments: [.right])
+  }
+
+  /// Format the frame list from a symbolicated backtrace.
+  ///
+  /// @param frames  The frames to format.
+  ///
+  /// @result A `String` containing the formatted data.
+  public func format(frames: [SymbolicatedBacktrace.Frame]) -> String {
+    var rows: [TableRow] = []
+    var sourceLocationsShown = Set<SymbolicatedBacktrace.SourceLocation>()
+
+    var n = 0
+    for frame in frames {
+      if options._skipRuntimeFailures && frame.isSwiftRuntimeFailure {
+        continue
       }
 
-      var columns = [frameIndex, location]
-      if options._showFrameAttributes {
-        columns.append(attrs.map(
-                         options._theme.frameAttribute
-                       ).joined(separator: " "))
-      }
-      rows.append(.columns(columns))
-
-      if options._showSourceCode {
-        if let symbol = frame.symbol,
-           let sourceLocation = symbol.sourceLocation,
-           !sourceLocationsShown.contains(sourceLocation) {
-          if let lines = formattedSourceLines(from: sourceLocation) {
-            rows.append(.raw(""))
-            rows.append(.raw(lines))
-            rows.append(.raw(""))
-          }
+      var showSource = options._showSourceCode
+      if let symbol = frame.symbol,
+         let sourceLocation = symbol.sourceLocation {
+        if sourceLocationsShown.contains(sourceLocation) {
+          showSource = false
+        } else {
           sourceLocationsShown.insert(sourceLocation)
         }
       }
+
+      rows += formatRows(frame: frame, index: n, showSource: showSource)
 
       if case let .omittedFrames(count) = frame.captured {
         n += count
@@ -772,8 +878,45 @@ public struct BacktraceFormatter {
   /// @param backtrace  The `SymbolicatedBacktrace` object to format.
   ///
   /// @result A `String` containing the formatted data.
-  public func format(_ backtrace: SymbolicatedBacktrace) -> String {
-    return format(backtrace.frames)
+  public func format(backtrace: SymbolicatedBacktrace) -> String {
+    return format(frames: backtrace.frames)
   }
 
+  /// Format a `Backtrace.Image` into a list of columns.
+  ///
+  /// @param image  The `Image` object to format.
+  ///
+  /// @result An array of strings, one per column.
+  public func formatColumns(image: Backtrace.Image) -> [String] {
+    let addressRange = "\(hex(image.baseAddress))–\(hex(image.endOfText))"
+    let buildID: String
+    if let bytes = image.buildID {
+      buildID = hex(bytes)
+    } else {
+      buildID = "<no build ID>"
+    }
+    let imagePath: String
+    if options._sanitizePaths {
+      imagePath = sanitizePath(image.path)
+    } else {
+      imagePath = image.path
+    }
+    return [
+      options._theme.imageAddressRange(addressRange),
+      options._theme.imageBuildID(buildID),
+      options._theme.imageName(image.name),
+      options._theme.imagePath(imagePath)
+    ]
+  }
+
+  /// Format an array of `Backtrace.Image`s.
+  ///
+  /// @param images  The array of `Image` objects to format.
+  ///
+  /// @result A string containing the formatted data.
+  public func format(images: [Backtrace.Image]) -> String {
+    let rows = images.map{ TableRow.columns(formatColumns(image: $0)) }
+
+    return BacktraceFormatter.formatTable(rows)
+  }
 }

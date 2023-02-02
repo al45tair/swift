@@ -20,6 +20,9 @@ import MSVCRT
 #endif
 
 @_spi(Formatting) import _Backtracing
+@_spi(Contexts) import _Backtracing
+@_spi(Registers) import _Backtracing
+@_spi(MemoryReaders) import _Backtracing
 
 @main
 internal struct SwiftBacktrace {
@@ -195,6 +198,8 @@ Generate a backtrace for the parent process.
 
     target = Target(crashInfoAddr: crashInfoAddr)
 
+    currentThread = target!.crashingThreadNdx
+
     printCrashLog()
 
     print("")
@@ -267,17 +272,19 @@ Generate a backtrace for the parent process.
   }
   #endif
 
-  static func getCrashingThread() -> (Int, TargetThread)? {
-    guard let target = target else {
-      return nil
-    }
+  static func backtraceFormatter() -> BacktraceFormatter {
+    var terminalSize = winsize(ws_row: 24, ws_col: 80,
+                               ws_xpixel: 1024, ws_ypixel: 768)
+    _ = ioctl(0, TIOCGWINSZ, &terminalSize)
 
-    for (ndx, thread) in target.threads.enumerated() {
-      if thread.id == target.crashingThread {
-        return (ndx, thread)
-      }
-    }
-    return nil
+    let theme: BacktraceFormattingThemeProtocol = args.color ? BacktraceFormatter.Themes.color : BacktraceFormatter.Themes.plain
+    return BacktraceFormatter(.theme(theme)
+                              .showAddresses(false)
+                              .showSourceCode(true)
+                              .showFrameAttributes(false)
+                              .skipRuntimeFailures(true)
+                              .sanitizePaths(false)
+                              .width(Int(terminalSize.ws_col)))
   }
 
   static func printCrashLog() {
@@ -286,27 +293,12 @@ Generate a backtrace for the parent process.
       return
     }
 
-    guard let (crashingThreadNdx, crashingThread) = getCrashingThread() else {
-      print("swift-backtrace: unable to find crashing thread")
-      return
-    }
-
-    currentThread = crashingThreadNdx
+    let crashingThread = target.threads[target.crashingThreadNdx]
 
     let description: String
 
-    if let frame = crashingThread.backtrace.frames.first,
-       frame.isRuntimeFailure {
-      let text: Substring
-      let symbolName = frame.symbol!.rawName
-
-      if symbolName.hasPrefix("_") {
-        text = symbolName.dropFirst()
-      } else {
-        text = symbolName.dropFirst(0)
-      }
-
-      description = String(text)
+    if let failure = crashingThread.backtrace.swiftRuntimeFailure {
+      description = failure
     } else {
       description = "Program crashed: \(target.signalDescription) at \(hex(target.faultAddress))"
     }
@@ -319,25 +311,14 @@ Generate a backtrace for the parent process.
     }
     print("")
 
-    var terminalSize = winsize(ws_row: 24, ws_col: 80,
-                               ws_xpixel: 1024, ws_ypixel: 768)
-    _ = ioctl(0, TIOCGWINSZ, &terminalSize)
-
     if crashingThread.name.isEmpty {
-      print("Thread \(crashingThreadNdx) crashed:\n")
+      print("Thread \(target.crashingThreadNdx) crashed:\n")
     } else {
-      print("Thread \(crashingThreadNdx) \"\(crashingThread.name)\" crashed:\n")
+      print("Thread \(target.crashingThreadNdx) \"\(crashingThread.name)\" crashed:\n")
     }
 
-    let theme: BacktraceFormattingThemeProtocol = args.color ? BacktraceFormatter.Themes.color : BacktraceFormatter.Themes.plain
-    let formatter = BacktraceFormatter(.theme(theme)
-                                         .showAddresses(false)
-                                         .showSourceCode(true)
-                                         .showFrameAttributes(false)
-                                         .skipRuntimeFailures(true)
-                                         .sanitizePaths(false)
-                                         .width(Int(terminalSize.ws_col)))
-    let formatted = formatter.format(crashingThread.backtrace)
+    let formatter = backtraceFormatter()
+    let formatted = formatter.format(backtrace: crashingThread.backtrace)
 
     print(formatted)
   }
@@ -354,17 +335,22 @@ Generate a backtrace for the parent process.
         break
       }
 
-      let cmd = input.split(maxSplits: 1, whereSeparator: { $0.isWhitespace })
+      let cmd = input.split(whereSeparator: { $0.isWhitespace })
 
       if cmd.count < 1 {
         continue
       }
 
+      // ###TODO: We should really replace this with something a little neater
       switch cmd[0].lowercased() {
         case "exit", "quit":
           return
         case "bt", "backtrace":
-          break
+          let formatter = backtraceFormatter()
+          let backtrace = target.threads[currentThread].backtrace
+          let formatted = formatter.format(backtrace: backtrace)
+
+          print(formatted)
         case "thread":
           if cmd.count >= 2 {
             if let newThreadNdx = Int(cmd[1]),
@@ -376,40 +362,128 @@ Generate a backtrace for the parent process.
             }
           }
 
-          let thread = target.threads[currentThread]
-          let backtrace = thread.backtrace
-
-          print("Thread \(currentThread) id=\(thread.id) \(thread.name)")
-
-          let firstFrame: SymbolicatedBacktrace.Frame
-          if backtrace.frames[0].isRuntimeFailure {
-            firstFrame = backtrace.frames[1]
+          let crashed: String
+          if currentThread == target.crashingThreadNdx {
+            crashed = " (crashed)"
           } else {
-            firstFrame = backtrace.frames[0]
+            crashed = ""
           }
 
-          print("    \(firstFrame)")
+          let thread = target.threads[currentThread]
+          let backtrace = thread.backtrace
+          let name = thread.name.isEmpty ? "" : " \(thread.name)"
+          print("Thread \(currentThread) id=\(thread.id)\(name)\(crashed)\n")
+
+          if backtrace.frames.count > 0 {
+            let frame: SymbolicatedBacktrace.Frame
+            if backtrace.isSwiftRuntimeFailure {
+              frame = backtrace.frames[1]
+            } else {
+              frame = backtrace.frames[0]
+            }
+
+            let formatter = backtraceFormatter()
+            let formatted = formatter.format(frame: frame)
+            print("\(formatted)")
+          }
           break
         case "reg", "registers":
+          if let context = target.threads[currentThread].context {
+            showRegisters(context)
+          } else {
+            print("No context for thread \(currentThread)")
+          }
           break
         case "mem", "memory":
+          if cmd.count != 2 && cmd.count != 3 {
+            print("memory <start-address> [<end-address>|+<byte-count>]")
+            break
+          }
+
+          guard let startAddress = parseUInt64(cmd[1]) else {
+            print("Bad start address \(cmd[1])")
+            break
+          }
+
+          let count: UInt64
+          if cmd.count == 3 {
+            if cmd[2].hasPrefix("+") {
+              guard let theCount = parseUInt64(cmd[2].dropFirst()) else {
+                print("Bad byte count \(cmd[2])")
+                break
+              }
+              count = theCount
+            } else {
+              guard let addr = parseUInt64(cmd[2]) else {
+                print("Bad end address \(cmd[2])")
+                break
+              }
+              if addr < startAddress {
+                print("End address must be after start address")
+                break
+              }
+              count = addr - startAddress
+            }
+          } else {
+            count = 256
+          }
+
+          dumpMemory(at: startAddress, count: count)
           break
         case "process", "threads":
-          print("Process \(target.pid) \"\(target.name)\" has \(target.threads.count) thread(s):")
+          print("Process \(target.pid) \"\(target.name)\" has \(target.threads.count) thread(s):\n")
+
+          let formatter = backtraceFormatter()
+
+          var rows: [BacktraceFormatter.TableRow] = []
           for (n, thread) in target.threads.enumerated() {
             let backtrace = thread.backtrace
 
-            print("\n  \(n) id=\(thread.id) \(thread.name)")
-
-            let firstFrame: SymbolicatedBacktrace.Frame
-            if backtrace.frames[0].isRuntimeFailure {
-              firstFrame = backtrace.frames[1]
+            let crashed: String
+            if n == target.crashingThreadNdx {
+              crashed = " (crashed)"
             } else {
-              firstFrame = backtrace.frames[0]
+              crashed = ""
             }
 
-            print("    \(firstFrame)")
+            let selected = currentThread == n ? "*" : " "
+            let name = thread.name.isEmpty ? "" : " \(thread.name)"
+
+            rows.append(.columns([ selected,
+                                   "\(n)",
+                                   "id=\(thread.id)\(name)\(crashed)" ]))
+
+            if backtrace.frames.count > 0 {
+              let frame: SymbolicatedBacktrace.Frame
+              if backtrace.isSwiftRuntimeFailure {
+                frame = backtrace.frames[1]
+              } else {
+                frame = backtrace.frames[0]
+              }
+
+              rows += formatter.formatRows(frame: frame).map{ row in
+                switch row {
+                  case let .columns(columns):
+                    return .columns([ "", "" ] + columns)
+                  default:
+                    return row
+                }
+              }
+            }
           }
+
+          let output = BacktraceFormatter.formatTable(rows,
+                                                      alignments: [
+                                                        .left,
+                                                        .right
+                                                      ])
+          print(output)
+        case "images":
+          let formatter = backtraceFormatter()
+          let images = target.threads[currentThread].backtrace.images
+          let output = formatter.format(images: images)
+
+          print(output)
         case "help":
           print("""
                   Available commands:
@@ -418,6 +492,7 @@ Generate a backtrace for the parent process.
                   bt         Synonym for backtrace.
                   exit       Exit interaction, allowing program to crash normally.
                   help       Display help.
+                  images     List images loaded by the program.
                   mem        Synonym for memory.
                   memory     Inspect memory.
                   process    Show information about the process.
@@ -433,5 +508,165 @@ Generate a backtrace for the parent process.
 
       print("")
     }
+  }
+
+  static func printableBytes(from bytes: some Sequence<UInt8>) -> String {
+    return String(
+      String.UnicodeScalarView(
+        bytes.map{ byte in
+          let cp: UInt32
+          switch byte {
+            case 0..<32:
+              cp = 0x2e
+            case 127:
+              cp = 0x2e
+            case 0x80..<0xa0:
+              cp = 0x2e
+            default:
+              cp = UInt32(byte)
+          }
+          return Unicode.Scalar(cp)!
+        }
+      )
+    )
+  }
+
+  static func dumpMemory(at address: UInt64, count: UInt64) {
+    guard let bytes = try? target!.reader.fetch(type: UInt8.self,
+                                                from: RemoteMemoryReader.Address(address),
+                                                count: Int(count)) else {
+      print("Unable to read memory")
+      return
+    }
+
+    let startAddress = HostContext.stripPtrAuth(address: address)
+    var ndx = 0
+    while ndx < bytes.count {
+      let addr = startAddress + UInt64(ndx)
+      let remaining = bytes.count - ndx
+      let lineChunk = 16
+      let todo = min(remaining, lineChunk)
+      let formattedBytes = bytes[ndx..<ndx+todo].map{
+        hex($0, withPrefix: false)
+      }.joined(separator: " ")
+      let printedBytes = printableBytes(from: bytes[ndx..<ndx+todo])
+      let padding = String(repeating: " ",
+                           count: lineChunk * 3 - formattedBytes.count - 1)
+
+      print("\(hex(addr, withPrefix: false))  \(formattedBytes)\(padding)  \(printedBytes)")
+
+      ndx += todo
+    }
+  }
+
+  static func showRegister<T: FixedWidthInteger>(name: String, value: T) {
+    // Pad the register name
+    let regPad = String(repeating: " ", count: max(3 - name.count, 0))
+    let regPadded = regPad + name
+
+    // Grab 16 bytes at each address if possible
+    if let bytes = try? target!.reader.fetch(type: UInt8.self,
+                                             from: RemoteMemoryReader.Address(value),
+                                             count: 16) {
+      let formattedBytes = bytes.map{
+        hex($0, withPrefix: false)
+      }.joined(separator: " ")
+      let printedBytes = printableBytes(from: bytes)
+      print("\(regPadded) \(hex(value))  \(formattedBytes)  \(printedBytes)")
+    } else {
+      print("\(regPadded) \(hex(value))  \(value)")
+    }
+  }
+
+  static func showGPR<C: Context>(name: String, context: C, register: C.Register) {
+    // Get the register contents
+    let value = context.getRegister(register)!
+
+    showRegister(name: name, value: value)
+  }
+
+  static func showGPRs<C: Context, Rs: Sequence>(_ context: C, range: Rs) where Rs.Element == C.Register {
+    for reg in range {
+      showGPR(name: "\(reg)", context: context, register: reg)
+    }
+  }
+
+  static func x86StatusFlags<T: FixedWidthInteger>(_ flags: T) -> String {
+    var status: [String] = []
+
+    if (flags & 0x400) != 0 {
+      status.append("OF")
+    }
+    if (flags & 0x80) != 0 {
+      status.append("SF")
+    }
+    if (flags & 0x40) != 0 {
+      status.append("ZF")
+    }
+    if (flags & 0x10) != 0 {
+      status.append("AF")
+    }
+    if (flags & 0x4) != 0 {
+      status.append("PF")
+    }
+    if (flags & 0x1) != 0 {
+      status.append("CF")
+    }
+
+    return status.joined(separator: " ")
+  }
+
+  static func showRegisters(_ context: X86_64Context) {
+    showGPRs(context, range: .rax ... .r15)
+    showRegister(name: "rip", value: context.programCounter)
+
+    let rflags = context.getRegister(.rflags)!
+    let cs = UInt16(context.getRegister(.cs)!)
+    let fs = UInt16(context.getRegister(.fs)!)
+    let gs = UInt16(context.getRegister(.gs)!)
+
+    let status = x86StatusFlags(rflags)
+
+    print("")
+    print("rflags \(hex(rflags))  \(status)")
+    print("")
+    print("cs \(hex(cs))  fs \(hex(fs))  gs \(hex(gs))")
+  }
+
+  static func showRegisters(_ context: I386Context) {
+    showGPRs(context, range: .eax ... .edi)
+    showRegister(name: "eip", value: context.programCounter)
+
+    let eflags = UInt32(context.getRegister(.eflags)!)
+    let es = UInt16(context.getRegister(.es)!)
+    let cs = UInt16(context.getRegister(.cs)!)
+    let ss = UInt16(context.getRegister(.ss)!)
+    let ds = UInt16(context.getRegister(.ds)!)
+    let fs = UInt16(context.getRegister(.fs)!)
+    let gs = UInt16(context.getRegister(.gs)!)
+
+    let status = x86StatusFlags(eflags)
+
+    print("")
+    print("eflags \(hex(eflags))  \(status)")
+    print("")
+    print("es: \(hex(es)) cs: \(hex(cs)) ss: \(hex(ss)) ds: \(hex(ds)) fs: \(fs)) gs: \(hex(gs))")
+  }
+
+  static func showRegisters(_ context: ARM64Context) {
+    showGPRs(context, range: .x0 ..< .x29)
+    showGPR(name: "fp", context: context, register: .x29)
+    showGPR(name: "lr", context: context, register: .x30)
+    showGPR(name: "sp", context: context, register: .sp)
+    showGPR(name: "pc", context: context, register: .pc)
+  }
+
+  static func showRegisters(_ context: ARMContext) {
+    showGPRs(context, range: .r0 ... .r10)
+    showGPR(name: "fp", context: context, register: .r11)
+    showGPR(name: "ip", context: context, register: .r12)
+    showGPR(name: "sp", context: context, register: .r13)
+    showGPR(name: "lr", context: context, register: .r14)
+    showGPR(name: "pc", context: context, register: .r15)
   }
 }

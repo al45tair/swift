@@ -30,3 +30,15 @@ internal func hex<T: FixedWidthInteger>(_ value: T,
 internal func hex(_ bytes: [UInt8]) -> String {
   return bytes.map{ hex($0, withPrefix: false) }.joined(separator: "")
 }
+
+internal func parseUInt64<S: StringProtocol>(_ s: S) -> UInt64? {
+  if s.hasPrefix("0x") {
+    return UInt64(s.dropFirst(2), radix: 16)
+  } else if s.hasPrefix("0b") {
+    return UInt64(s.dropFirst(2), radix: 2)
+  } else if s.hasPrefix("0o") {
+    return UInt64(s.dropFirst(2), radix: 8)
+  } else {
+    return UInt64(s, radix: 10)
+  }
+}

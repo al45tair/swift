@@ -72,6 +72,7 @@ class Target {
   var sharedCacheInfo: Backtrace.SharedCacheInfo
 
   var threads: [TargetThread] = []
+  var crashingThreadNdx: Int = -1
 
   var signalName: String {
     switch signal {
@@ -231,6 +232,7 @@ class Target {
 
       if info.thread_id == crashingThread {
         ctx = HostContext.fromHostMContext(mcontext)
+        crashingThreadNdx = Int(ndx)
       } else {
         guard let threadCtx = HostContext.fromHostThread(ports[Int(ndx)]) else {
           // This can happen legitimately, e.g. when looking at a Rosetta 2
