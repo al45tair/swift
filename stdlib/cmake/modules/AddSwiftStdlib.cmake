@@ -2764,10 +2764,6 @@ function(add_swift_target_executable name)
         set(maccatalyst_module_variant_name "${name}${maccatalyst_module_variant_suffix}")
       endif()
 
-      if(SWIFTEXE_TARGET_BUILD_WITH_STDLIB)
-        add_dependencies("swift-stdlib${VARIANT_SUFFIX}" ${VARIANT_NAME})
-      endif()
-
       # Swift compiles depend on swift modules, while links depend on
       # linked libraries.  Find targets for both of these here.
       set(swiftexe_module_dependency_targets)
@@ -2892,10 +2888,6 @@ function(add_swift_target_executable name)
                            ${codesign_arg}
                            ${THIN_INPUT_TARGETS})
 
-    if(SWIFTEXE_TARGET_BUILD_WITH_STDLIB)
-      add_dependencies("swift-stdlib" ${lipo_target})
-    endif()
-
     # Determine the subdirectory where this executable will be installed
     set(resource_dir_sdk_subdir "${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
     if(maccatalyst_build_flavor STREQUAL "ios-like")
@@ -2953,13 +2945,14 @@ function(add_swift_target_executable name)
     endforeach()
 
     # Add the lipo target to the top-level convenience targets
-    foreach(arch ${SWIFT_SDK_${sdk}_ARCHITECTURES})
-      set(VARIANT_SUFFIX "-${SWIFT_SDK_${sdk}_LIB_SUBDIR}-${arch}")
-      if(TARGET "swift-stdlib${VARIANT_SUFFIX}")
-        add_dependencies("swift-stdlib${VARIANT_SUFFIX}"
-          ${lipo_target})
-      endif()
-    endforeach()
+    if(SWIFTEXE_TARGET_BUILD_WITH_STDLIB)
+      foreach(arch ${SWIFT_SDK_${sdk}_ARCHITECTURES})
+        set(variant "-${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
+        if(TARGET "swift-stdlib${variant}")
+          add_dependencies("swift-stdlib${variant}" ${lipo_target})
+        endif()
+      endforeach()
+    endif()
 
   endforeach()
 endfunction()
