@@ -707,7 +707,7 @@ extension arm_gprs {
     // Is there a better way to do this?  It'd be easy if we just wanted to
     // strip for the *host*, but we might conceivably want this under other
     // circumstances too.
-    return address & 0x0007ffffffffffff
+    return address & 0x00007fffffffffff
   }
 
   internal static var coreSymbolicationArchitecture: CSArchitecture {

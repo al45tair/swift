@@ -145,7 +145,7 @@ class Target {
     }
   }
 
-  init(crashInfoAddr: UInt64) {
+  init(crashInfoAddr: UInt64, limit: Int?, top: Int) {
     pid = getppid()
     if let parentTask = Self.getParentTask() {
       task = parentTask
@@ -160,7 +160,7 @@ class Target {
 
     let crashInfo: CrashInfo
     do {
-      crashInfo = try reader.fetch<CrashInfo>(from: crashInfoAddr)
+      crashInfo = try reader.fetch(from: crashInfoAddr, as: CrashInfo.self)
     } catch {
       print("swift-backtrace: unable to fetch crash info.")
       exit(1)
@@ -170,7 +170,8 @@ class Target {
     signal = crashInfo.signal
     faultAddress = crashInfo.fault_address
 
-    guard let mctx: MContext = try? reader.fetch<MContext>(from: crashInfo.mctx) else {
+    guard let mctx: MContext = try? reader.fetch(from: crashInfo.mctx,
+                                                 as: MContext.self) else {
       print("swift-backtrace: unable to fetch mcontext.")
       exit(1)
     }
@@ -180,10 +181,10 @@ class Target {
     images = Backtrace.captureImages(for: task)
     sharedCacheInfo = Backtrace.captureSharedCacheInfo(for: task)
 
-    fetchThreads()
+    fetchThreads(limit: limit, top: top)
   }
 
-  func fetchThreads() {
+  func fetchThreads(limit: Int?, top: Int) {
     var threadPorts: thread_act_array_t? = nil
     var threadCount: mach_msg_type_number_t = 0
     let kr = task_threads(task,
@@ -243,7 +244,9 @@ class Target {
       }
 
       guard let backtrace = try? Backtrace.capture(from: ctx,
-                                                   using: reader) else {
+                                                   using: reader,
+                                                   limit: limit,
+                                                   top: top) else {
         print("unable to capture backtrace from context for thread \(ndx)")
         exit(1)
       }
@@ -260,6 +263,30 @@ class Target {
                                   backtrace: symbolicated))
 
       mach_port_deallocate(mach_task_self_, ports[Int(ndx)])
+    }
+  }
+
+  public func redoBacktraces(limit: Int?, top: Int) {
+    for (ndx, thread) in threads.enumerated() {
+      guard let context = thread.context else {
+        continue
+      }
+
+      guard let backtrace = try? Backtrace.capture(from: context,
+                                                   using: reader,
+                                                   limit: limit,
+                                                   top: top) else {
+        print("unable to capture backtrace from context for thread \(ndx)")
+        continue
+      }
+
+      guard let symbolicated = backtrace.symbolicated(with: images,
+                                                      sharedCacheInfo: sharedCacheInfo) else {
+        print("unable to symbolicate backtrace from context for thread \(ndx)")
+        continue
+      }
+
+      threads[ndx].backtrace = symbolicated
     }
   }
 }

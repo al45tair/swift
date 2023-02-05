@@ -27,28 +27,61 @@ import MSVCRT
 @main
 internal struct SwiftBacktrace {
   enum UnwindAlgorithm {
-    case Fast
-    case Precise
+    case fast
+    case precise
+  }
+
+  enum Preset {
+    case none
+    case friendly
+    case medium
+    case full
+  }
+
+  enum ImagesToShow {
+    case none
+    case all
+    case mentioned
+  }
+
+  enum RegistersToShow {
+    case none
+    case all
+    case crashedOnly
   }
 
   struct Arguments {
-    var unwindAlgorithm: UnwindAlgorithm = .Precise
+    var unwindAlgorithm: UnwindAlgorithm = .precise
     var symbolicate = false
     var interactive = false
     var color = false
     var timeout = 30
-    var level = 1
+    var preset: Preset = .none
+    var threads: Bool? = nil
+    var registers: RegistersToShow? = nil
     var crashInfo: UInt64? = nil
+    var showImages: ImagesToShow? = nil
+    var limit: Int? = 64
+    var top = 16
   }
 
   static var args = Arguments()
+  static var formattingOptions = BacktraceFormattingOptions()
 
   static var target: Target? = nil
   static var currentThread: Int = 0
 
+  static var theme: any Theme {
+    if args.color {
+      return Themes.color
+    } else {
+      return Themes.plain
+    }
+  }
+
   static func usage() {
     print("""
-usage: swift-backtrace [--unwind <algorithm>] [--symbolicate [<bool>]] [--interactive [<bool>]] [--color [<bool>]] [--timeout <seconds>] [--level <level>] --crashinfo <addr>
+usage: swift-backtrace [--unwind <algorithm>] [--symbolicate [<bool>]] [--interactive [<bool>]] [--color [<bool>]] [--timeout <seconds>] [--preset <preset>] [--threads [<bool>]] [--registers <registers>] [--images <images>] --crashinfo <addr>
 
 Generate a backtrace for the parent process.
 
@@ -68,8 +101,29 @@ Generate a backtrace for the parent process.
 --timeout <seconds>
 -t <seconds>            Set how long to wait for interaction.
 
---level <level>
--l <level>              Set the initial verbosity level.
+--preset <preset>
+-p <preset>             Set the backtrace format (by preset).  Options are
+                        "friendly", "medium" and "full".
+
+--threads [<bool>]
+-h [<bool>]             Set whether or not to show all threads.
+
+--registers <registers>
+-r <registers>          Set which registers dumps to show.  Options are "none",
+                        "all" and "crashed".
+
+--images <images>
+-m <images>             Set which images to list.  Options are "none", "all"
+                        and "mentioned".
+
+--limit <count>
+-l <count>              Set the limit on the number of frames to capture.
+                        Can be set to "none" to disable the limit.
+
+--top <count>
+-T <count>              Set the minimum number of frames to capture at the top
+                        of the stack.  This is used with limit to ensure that
+                        you capture sufficient frames to understand deep traces.
 
 --crashinfo <addr>
 -a <addr>               Provide a pointer to a platform specific CrashInfo
@@ -79,16 +133,16 @@ Generate a backtrace for the parent process.
 
   static func handleArgument(_ arg: String, value: String?) {
     switch arg {
-      case "-?", "-h", "--help":
+      case "-?", "--help":
         usage()
         exit(0)
       case "-u", "--unwind":
         if let v = value {
           switch v.lowercased() {
             case "fast":
-              args.unwindAlgorithm = .Fast
+              args.unwindAlgorithm = .fast
             case "precise":
-              args.unwindAlgorithm = .Precise
+              args.unwindAlgorithm = .precise
             default:
               print("swift-backtrace: unknown unwind algorithm '\(v)'")
               usage()
@@ -122,24 +176,99 @@ Generate a backtrace for the parent process.
           if let secs = Int(v), secs >= 0 {
             args.timeout = secs
           } else {
-            print("bad timeout '\(v)'")
+            print("swift-backtrace: bad timeout '\(v)'")
           }
         } else {
           print("swift-backtrace: missing timeout value")
           usage()
           exit(1)
         }
-      case "-l", "--level":
+      case "-p", "--preset":
         if let v = value {
-          if let l = Int(v), l > 0 {
-            args.level = l
-          } else {
-            print("swift-backtrace: bad verbosity level '\(v)'")
-            usage()
-            exit(1)
+          switch v.lowercased() {
+            case "friendly":
+              args.preset = .friendly
+            case "medium":
+              args.preset = .medium
+            case "full":
+              args.preset = .full
+            default:
+              print("swift-backtrace: unknown preset '\(v)'")
+              usage()
+              exit(1)
           }
         } else {
-          print("swift-backtrace: missing verbosity level")
+          print("swift-backtrace: missing preset name")
+          usage()
+          exit(1)
+        }
+      case "-h", "--threads":
+        if let v = value {
+          args.threads = v.lowercased() == "true"
+        } else {
+          args.threads = true
+        }
+      case "-r", "--registers":
+        if let v = value {
+          switch v.lowercased() {
+            case "none":
+              args.registers = RegistersToShow.none
+            case "all":
+              args.registers = .all
+            case "crashed":
+              args.registers = .crashedOnly
+            default:
+              print("swift-backtrace: unknown registers setting '\(v)'")
+              usage()
+              exit(1)
+          }
+        } else {
+          print("swift-backtrace: missing registers setting")
+          usage()
+          exit(1)
+        }
+      case "-m", "--images":
+        if let v = value {
+          switch v.lowercased() {
+            case "none":
+              args.showImages = ImagesToShow.none
+            case "all":
+              args.showImages = .all
+            case "mentioned":
+              args.showImages = .mentioned
+            default:
+              print("swift-backtrace: unknown images setting '\(v)'")
+              usage()
+              exit(1)
+          }
+        } else {
+          print("swift-backtrace: missing images setting")
+          usage()
+          exit(1)
+        }
+      case "-l", "--limit":
+        if let v = value {
+          if v.lowercased() == "none" {
+            args.limit = nil
+          } else if let limit = Int(v), limit > 0 {
+            args.limit = limit
+          } else {
+            print("swift-backtrace: bad limit value \(v)")
+          }
+        } else {
+          print("swift-backtrace: missing limit value")
+          usage()
+          exit(1)
+        }
+      case "-T", "--top":
+        if let v = value {
+          if let top = Int(v), top >= 0 {
+            args.top = top
+          } else {
+            print("swift-backtrace: bad top value \(v)")
+          }
+        } else {
+          print("swift-backtrace: missing top value")
           usage()
           exit(1)
         }
@@ -165,9 +294,90 @@ Generate a backtrace for the parent process.
   }
 
   static func main() {
-    // Parse the command line arguments; we can't use swift-argument-parser
-    // from here because that would create a dependency problem, so we do
-    // it manually.
+    parseArguments()
+
+    guard let crashInfoAddr = args.crashInfo else {
+      print("swift-backtrace: --crashinfo is not optional")
+      usage()
+      exit(1)
+    }
+
+    // Set-up the backtrace formatting options
+    switch args.preset {
+      case .friendly, .none:
+        formattingOptions =
+          .showAddresses(false)
+          .showSourceCode(true)
+          .showFrameAttributes(false)
+          .sanitizePaths(false)
+        if args.threads == nil {
+          args.threads = false
+        }
+        if args.registers == nil {
+          args.registers = RegistersToShow.none
+        }
+        if args.showImages == nil {
+          args.showImages = ImagesToShow.none
+        }
+      case .medium:
+        formattingOptions =
+          .showSourceCode(true)
+          .showFrameAttributes(true)
+        if args.threads == nil {
+          args.threads = false
+        }
+        if args.registers == nil {
+          args.registers = .crashedOnly
+        }
+        if args.showImages == nil {
+          args.showImages = .mentioned
+        }
+      case .full:
+        formattingOptions =
+          .skipRuntimeFailures(false)
+          .skipThunkFunctions(false)
+          .skipSystemFrames(false)
+        if args.threads == nil {
+          args.threads = true
+        }
+        if args.registers == nil {
+          args.registers = .crashedOnly
+        }
+        if args.showImages == nil {
+          args.showImages = .mentioned
+        }
+    }
+
+    // We never use the showImages option; if we're going to show images, we
+    // want to do it *once* for all the backtraces we showed.
+    formattingOptions = formattingOptions.showImages(.none)
+
+    target = Target(crashInfoAddr: crashInfoAddr,
+                    limit: args.limit, top: args.top)
+
+    currentThread = target!.crashingThreadNdx
+
+    printCrashLog()
+
+    print("")
+
+    if args.interactive {
+      // Make sure we're line buffered
+      setvbuf(stdout, nil, _IOLBF, 0)
+
+      if let ch = waitForKey("Press space to interact, or any other key to quit",
+                             timeout: args.timeout),
+         ch == UInt8(ascii: " ") {
+        interactWithUser()
+      }
+    }
+
+  }
+
+  // Parse the command line arguments; we can't use swift-argument-parser
+  // from here because that would create a dependency problem, so we do
+  // it manually.
+  static func parseArguments() {
     var currentArg: String? = nil
     for arg in CommandLine.arguments[1...] {
       if arg.hasPrefix("-") {
@@ -189,29 +399,6 @@ Generate a backtrace for the parent process.
     if let key = currentArg {
       handleArgument(key, value: nil)
     }
-
-    guard let crashInfoAddr = args.crashInfo else {
-      print("swift-backtrace: --crashinfo is not optional")
-      usage()
-      exit(1)
-    }
-
-    target = Target(crashInfoAddr: crashInfoAddr)
-
-    currentThread = target!.crashingThreadNdx
-
-    printCrashLog()
-
-    print("")
-
-    if args.interactive {
-      if let ch = waitForKey("Press space to interact, or any other key to quit",
-                             timeout: args.timeout),
-         ch == UInt8(ascii: " ") {
-        interactWithUser()
-      }
-    }
-
   }
 
   #if os(Linux) || os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
@@ -277,13 +464,8 @@ Generate a backtrace for the parent process.
                                ws_xpixel: 1024, ws_ypixel: 768)
     _ = ioctl(0, TIOCGWINSZ, &terminalSize)
 
-    let theme: BacktraceFormattingThemeProtocol = args.color ? BacktraceFormatter.Themes.color : BacktraceFormatter.Themes.plain
-    return BacktraceFormatter(.theme(theme)
-                              .showAddresses(false)
-                              .showSourceCode(true)
-                              .showFrameAttributes(false)
-                              .skipRuntimeFailures(true)
-                              .sanitizePaths(false)
+    return BacktraceFormatter(formattingOptions
+                              .theme(theme)
                               .width(Int(terminalSize.ws_col)))
   }
 
@@ -304,23 +486,76 @@ Generate a backtrace for the parent process.
     }
 
     print("")
-    if args.color {
-      print("\u{1b}[91m\(description)\u{1b}[0m")
-    } else {
-      print("*** \(description) ***")
-    }
+    print(theme.crashReason(description))
     print("")
 
-    if crashingThread.name.isEmpty {
-      print("Thread \(target.crashingThreadNdx) crashed:\n")
-    } else {
-      print("Thread \(target.crashingThreadNdx) \"\(crashingThread.name)\" crashed:\n")
+    var mentionedImages = Set<Int>()
+    let formatter = backtraceFormatter()
+
+    func dump(ndx: Int, thread: TargetThread) {
+      let crashed = thread.id == target.crashingThread ? " crashed" : ""
+      let name = !thread.name.isEmpty ? " \"\(thread.name)\"" : ""
+      print("Thread \(ndx)\(name)\(crashed):\n")
+
+      if args.registers! == .all {
+        if let context = thread.context {
+          showRegisters(context)
+        } else {
+          print("  " + theme.info("no context for thread \(ndx)"))
+        }
+        print("")
+      }
+
+      let formatted = formatter.format(backtrace: thread.backtrace)
+
+      print(formatted)
+
+      if args.showImages! == .mentioned {
+        for frame in thread.backtrace.frames {
+          if formatter.shouldSkip(frame) {
+            continue
+          }
+          if let symbol = frame.symbol, symbol.imageIndex >= 0 {
+            mentionedImages.insert(symbol.imageIndex)
+          }
+        }
+      }
     }
 
-    let formatter = backtraceFormatter()
-    let formatted = formatter.format(backtrace: crashingThread.backtrace)
+    if args.threads! {
+      for (ndx, thread) in target.threads.enumerated() {
+        dump(ndx: ndx, thread: thread)
+      }
+    } else {
+      dump(ndx: target.crashingThreadNdx, thread: crashingThread)
+    }
 
-    print(formatted)
+    if args.registers! == .crashedOnly {
+      print("\n\nRegisters:\n")
+
+      if let context = target.threads[target.crashingThreadNdx].context {
+        showRegisters(context)
+      } else {
+        print(theme.info("no context for thread \(target.crashingThreadNdx)"))
+      }
+    }
+
+    switch args.showImages! {
+      case .none:
+        break
+      case .mentioned:
+        let images = mentionedImages.sorted().map{ target.images[$0] }
+        let omitted = target.images.count - images.count
+        if omitted > 0 {
+          print("\n\nImages (\(omitted) omitted):\n")
+        } else {
+          print("\n\nImages:\n")
+        }
+        print(formatter.format(images: images))
+      case .all:
+        print("\n\nImages:\n")
+        print(formatter.format(images: target.images))
+    }
   }
 
   static func interactWithUser() {
@@ -329,7 +564,8 @@ Generate a backtrace for the parent process.
     }
 
     while true {
-      print(">>> ", terminator: "")
+      fflush(stdout)
+      print(theme.prompt(">>> "), terminator: "")
       guard let input = readLine() else {
         print("")
         break
@@ -357,7 +593,7 @@ Generate a backtrace for the parent process.
                newThreadNdx >= 0 && newThreadNdx < target.threads.count {
               currentThread = newThreadNdx
             } else {
-              print("Bad thread index '\(cmd[1])'")
+              print(theme.error("Bad thread index '\(cmd[1])'"))
               break
             }
           }
@@ -374,14 +610,9 @@ Generate a backtrace for the parent process.
           let name = thread.name.isEmpty ? "" : " \(thread.name)"
           print("Thread \(currentThread) id=\(thread.id)\(name)\(crashed)\n")
 
-          if backtrace.frames.count > 0 {
-            let frame: SymbolicatedBacktrace.Frame
-            if backtrace.isSwiftRuntimeFailure {
-              frame = backtrace.frames[1]
-            } else {
-              frame = backtrace.frames[0]
-            }
-
+          if let frame = backtrace.frames.drop(while: {
+            $0.isSwiftRuntimeFailure
+          }).first {
             let formatter = backtraceFormatter()
             let formatted = formatter.format(frame: frame)
             print("\(formatted)")
@@ -391,7 +622,7 @@ Generate a backtrace for the parent process.
           if let context = target.threads[currentThread].context {
             showRegisters(context)
           } else {
-            print("No context for thread \(currentThread)")
+            print(theme.info("no context for thread \(currentThread)"))
           }
           break
         case "mem", "memory":
@@ -401,7 +632,7 @@ Generate a backtrace for the parent process.
           }
 
           guard let startAddress = parseUInt64(cmd[1]) else {
-            print("Bad start address \(cmd[1])")
+            print(theme.error("bad start address \(cmd[1])"))
             break
           }
 
@@ -409,13 +640,13 @@ Generate a backtrace for the parent process.
           if cmd.count == 3 {
             if cmd[2].hasPrefix("+") {
               guard let theCount = parseUInt64(cmd[2].dropFirst()) else {
-                print("Bad byte count \(cmd[2])")
+                print(theme.error("bad byte count \(cmd[2])"))
                 break
               }
               count = theCount
             } else {
               guard let addr = parseUInt64(cmd[2]) else {
-                print("Bad end address \(cmd[2])")
+                print(theme.error("bad end address \(cmd[2])"))
                 break
               }
               if addr < startAddress {
@@ -446,20 +677,15 @@ Generate a backtrace for the parent process.
               crashed = ""
             }
 
-            let selected = currentThread == n ? "*" : " "
+            let selected = currentThread == n ? "▶︎" : " "
             let name = thread.name.isEmpty ? "" : " \(thread.name)"
 
             rows.append(.columns([ selected,
                                    "\(n)",
                                    "id=\(thread.id)\(name)\(crashed)" ]))
-
-            if backtrace.frames.count > 0 {
-              let frame: SymbolicatedBacktrace.Frame
-              if backtrace.isSwiftRuntimeFailure {
-                frame = backtrace.frames[1]
-              } else {
-                frame = backtrace.frames[0]
-              }
+            if let frame = backtrace.frames.drop(while: {
+              $0.isSwiftRuntimeFailure
+            }).first {
 
               rows += formatter.formatRows(frame: frame).map{ row in
                 switch row {
@@ -484,6 +710,76 @@ Generate a backtrace for the parent process.
           let output = formatter.format(images: images)
 
           print(output)
+        case "set":
+          if cmd.count == 1 {
+            let limit: String
+            if let lim = args.limit {
+              limit = "\(lim)"
+            } else {
+              limit = "none"
+            }
+            let top = "\(args.top)"
+
+            print("""
+                    limit = \(limit)
+                    top   = \(top)
+                    """)
+          } else {
+            for optval in cmd[1...] {
+              let parts = optval.split(separator: "=", maxSplits: 1,
+                                       omittingEmptySubsequences: false)
+              if parts.count == 1 {
+                let option = parts[0]
+
+                switch option {
+                  case "limit":
+                    if let limit = args.limit {
+                      print("limit = \(limit)")
+                    } else {
+                      print("limit = none")
+                    }
+
+                  case "top":
+                    print("top = \(args.top)")
+
+                  default:
+                    print(theme.error("unknown option '\(option)'"))
+                }
+              } else {
+                let option = parts[0]
+                let value = parts[1]
+                var changedBacktrace = false
+
+                switch option {
+                  case "limit":
+                    if value == "none" {
+                      args.limit = nil
+                      changedBacktrace = true
+                    } else if let limit = Int(value), limit > 0 {
+                      args.limit = limit
+                      changedBacktrace = true
+                    } else {
+                      print(theme.error("bad limit value '\(value)'"))
+                    }
+
+                  case "top":
+                    if let top = Int(value), top >= 0 {
+                      args.top = top
+                      changedBacktrace = true
+                    } else {
+                      print(theme.error("bad top value '\(value)'"))
+                    }
+
+                  default:
+                    print(theme.error("unknown option '\(option)'"))
+                }
+
+                if changedBacktrace {
+                  target.redoBacktraces(limit: args.limit, top: args.top)
+                }
+              }
+            }
+          }
         case "help":
           print("""
                   Available commands:
@@ -499,11 +795,12 @@ Generate a backtrace for the parent process.
                   quit       Synonym for exit.
                   reg        Synonym for registers.
                   registers  Display the registers.
+                  set        Set or show options.
                   thread     Show or set the current thread.
                   threads    Synonym for process.
                   """)
         default:
-          print("unknown command '\(cmd[0])'")
+          print(theme.error("unknown command '\(cmd[0])'"))
       }
 
       print("")
@@ -511,30 +808,23 @@ Generate a backtrace for the parent process.
   }
 
   static func printableBytes(from bytes: some Sequence<UInt8>) -> String {
-    return String(
-      String.UnicodeScalarView(
-        bytes.map{ byte in
-          let cp: UInt32
-          switch byte {
-            case 0..<32:
-              cp = 0x2e
-            case 127:
-              cp = 0x2e
-            case 0x80..<0xa0:
-              cp = 0x2e
-            default:
-              cp = UInt32(byte)
-          }
-          return Unicode.Scalar(cp)!
-        }
-      )
-    )
+    // It would be nice to join these with ZWNJs to prevent ligature processing,
+    // but sadly Terminal displays ZWNJ as a space character.
+    return bytes.map{ byte in
+      switch byte {
+        case 0..<32, 127, 0x80..<0xa0:
+          return theme.nonPrintable("·")
+        default:
+          return theme.printable(String(Unicode.Scalar(byte)))
+      }
+    }.joined(separator:"")
   }
 
   static func dumpMemory(at address: UInt64, count: UInt64) {
-    guard let bytes = try? target!.reader.fetch(type: UInt8.self,
-                                                from: RemoteMemoryReader.Address(address),
-                                                count: Int(count)) else {
+    guard let bytes = try? target!.reader.fetch(
+            from: RemoteMemoryReader.Address(address),
+            count: Int(count),
+            as: UInt8.self) else {
       print("Unable to read memory")
       return
     }
@@ -546,35 +836,40 @@ Generate a backtrace for the parent process.
       let remaining = bytes.count - ndx
       let lineChunk = 16
       let todo = min(remaining, lineChunk)
-      let formattedBytes = bytes[ndx..<ndx+todo].map{
+      let formattedBytes = theme.data(bytes[ndx..<ndx+todo].map{
         hex($0, withPrefix: false)
-      }.joined(separator: " ")
+      }.joined(separator: " "))
       let printedBytes = printableBytes(from: bytes[ndx..<ndx+todo])
       let padding = String(repeating: " ",
-                           count: lineChunk * 3 - formattedBytes.count - 1)
+                           count: (lineChunk - todo) * 3)
 
-      print("\(hex(addr, withPrefix: false))  \(formattedBytes)\(padding)  \(printedBytes)")
+      let hexAddr = theme.address(hex(addr, withPrefix: false))
+      print("\(hexAddr)  \(formattedBytes)\(padding)  \(printedBytes)")
 
       ndx += todo
     }
   }
 
   static func showRegister<T: FixedWidthInteger>(name: String, value: T) {
+    let hexValue = theme.hexValue(hex(value))
+
     // Pad the register name
     let regPad = String(repeating: " ", count: max(3 - name.count, 0))
-    let regPadded = regPad + name
+    let reg = theme.register(regPad + name)
 
     // Grab 16 bytes at each address if possible
-    if let bytes = try? target!.reader.fetch(type: UInt8.self,
-                                             from: RemoteMemoryReader.Address(value),
-                                             count: 16) {
-      let formattedBytes = bytes.map{
+    if let bytes = try? target!.reader.fetch(
+         from: RemoteMemoryReader.Address(value),
+         count: 16,
+         as: UInt8.self) {
+      let formattedBytes = theme.data(bytes.map{
         hex($0, withPrefix: false)
-      }.joined(separator: " ")
+      }.joined(separator: " "))
       let printedBytes = printableBytes(from: bytes)
-      print("\(regPadded) \(hex(value))  \(formattedBytes)  \(printedBytes)")
+      print("\(reg) \(hexValue)  \(formattedBytes)  \(printedBytes)")
     } else {
-      print("\(regPadded) \(hex(value))  \(value)")
+      let decValue = theme.decimalValue("\(value)")
+      print("\(reg) \(hexValue)  \(decValue)")
     }
   }
 
@@ -621,16 +916,17 @@ Generate a backtrace for the parent process.
     showRegister(name: "rip", value: context.programCounter)
 
     let rflags = context.getRegister(.rflags)!
-    let cs = UInt16(context.getRegister(.cs)!)
-    let fs = UInt16(context.getRegister(.fs)!)
-    let gs = UInt16(context.getRegister(.gs)!)
+    let cs = theme.hexValue(hex(UInt16(context.getRegister(.cs)!)))
+    let fs = theme.hexValue(hex(UInt16(context.getRegister(.fs)!)))
+    let gs = theme.hexValue(hex(UInt16(context.getRegister(.gs)!)))
 
-    let status = x86StatusFlags(rflags)
+    let hexFlags = theme.hexValue(hex(rflags))
+    let status = theme.flags(x86StatusFlags(rflags))
 
     print("")
-    print("rflags \(hex(rflags))  \(status)")
+    print("\(theme.register("rflags")) \(hexFlags)  \(status)")
     print("")
-    print("cs \(hex(cs))  fs \(hex(fs))  gs \(hex(gs))")
+    print("\(theme.register("cs")) \(cs)  \(theme.register("fs")) \(fs)  \(theme.register("gs")) \(gs)")
   }
 
   static func showRegisters(_ context: I386Context) {
@@ -638,19 +934,20 @@ Generate a backtrace for the parent process.
     showRegister(name: "eip", value: context.programCounter)
 
     let eflags = UInt32(context.getRegister(.eflags)!)
-    let es = UInt16(context.getRegister(.es)!)
-    let cs = UInt16(context.getRegister(.cs)!)
-    let ss = UInt16(context.getRegister(.ss)!)
-    let ds = UInt16(context.getRegister(.ds)!)
-    let fs = UInt16(context.getRegister(.fs)!)
-    let gs = UInt16(context.getRegister(.gs)!)
+    let es = theme.hexValue(hex(UInt16(context.getRegister(.es)!)))
+    let cs = theme.hexValue(hex(UInt16(context.getRegister(.cs)!)))
+    let ss = theme.hexValue(hex(UInt16(context.getRegister(.ss)!)))
+    let ds = theme.hexValue(hex(UInt16(context.getRegister(.ds)!)))
+    let fs = theme.hexValue(hex(UInt16(context.getRegister(.fs)!)))
+    let gs = theme.hexValue(hex(UInt16(context.getRegister(.gs)!)))
 
-    let status = x86StatusFlags(eflags)
+    let hexFlags = theme.hexValue(hex(eflags))
+    let status = theme.flags(x86StatusFlags(eflags))
 
     print("")
-    print("eflags \(hex(eflags))  \(status)")
+    print("\(theme.register("eflags")) \(hexFlags)  \(status)")
     print("")
-    print("es: \(hex(es)) cs: \(hex(cs)) ss: \(hex(ss)) ds: \(hex(ds)) fs: \(fs)) gs: \(hex(gs))")
+    print("\(theme.register("es")): \(es) \(theme.register("cs")): \(cs) \(theme.register("ss")): \(ss) \(theme.register("ds")): \(ds) \(theme.register("fs")): \(fs)) \(theme.register("gs")): \(gs)")
   }
 
   static func showRegisters(_ context: ARM64Context) {

@@ -25,6 +25,8 @@
 #include "swift/Runtime/EnvironmentVariables.h"
 #include "swift/Runtime/Win32.h"
 
+#include "swift/Demangling/Demangler.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -50,15 +52,15 @@ namespace runtime {
 namespace backtrace {
 
 SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings = {
-  Auto,
+  UnwindAlgorithm::Auto,
 
   // enabled
 #if TARGET_OS_OSX
-  TTY,
+  OnOffTty::TTY,
 #elif defined(__linux__) || defined(_WIN32)
-  On,
+  OnOffTty::On,
 #else
-  Off,
+  OnOffTty::Off,
 #endif
 
   // symbolicate
@@ -66,19 +68,19 @@ SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings = {
 
   // interactive
 #if TARGET_OS_OSX || defined(__linux__) || defined(_WIN32)
-  TTY,
+  OnOffTty::TTY,
 #else
-  Off,
+  OnOffTty::Off,
 #endif
 
   // color
-  TTY,
+  OnOffTty::TTY,
 
   // timeout
   30,
 
-  // level
-  1,
+  // preset
+  Preset::Auto,
 
   // swiftBacktracePath
   NULL,
@@ -163,22 +165,31 @@ bool isStdinATty()
 #if DEBUG_BACKTRACING_SETTINGS
 const char *algorithmToString(UnwindAlgorithm algorithm) {
   switch (algorithm) {
-  case Auto: return "Auto";
-  case Fast: return "Fast";
-  case Precise: return "Precise";
+  case UnwindAlgorithm::Auto: return "Auto";
+  case UnwindAlgorithm::Fast: return "Fast";
+  case UnwindAlgorithm::Precise: return "Precise";
   }
 }
 
 const char *onOffTtyToString(OnOffTty oot) {
   switch (oot) {
-  case On: return "On";
-  case Off: return "Off";
-  case TTY: return "TTY";
+  case OnOffTty::On: return "On";
+  case OnOffTty::Off: return "Off";
+  case OnOffTty::TTY: return "TTY";
   }
 }
 
 const char *boolToString(bool b) {
   return b ? "true" : "false";
+}
+
+const char *presetToString(Preset preset) {
+  switch (preset) {
+  case Preset::Auto: return "Auto";
+  case Preset::Friendly: return "Friendly";
+  case Preset::Medium: return "Medium";
+  case Preset::Full: return Full;
+  }
 }
 #endif
 
@@ -207,19 +218,30 @@ BacktraceInitializer::BacktraceInitializer() {
   if (_swift_backtraceSettings.enabled) {
     swift::warning(0,
                    "backtrace-on-crash is not supported on this platform.\n");
-    _swift_backtraceSettings.enabled = Off;
+    _swift_backtraceSettings.enabled = OnOffTty::Off;
   }
 #else
-  if (_swift_backtraceSettings.enabled == TTY)
-    _swift_backtraceSettings.enabled = isStdoutATty() ? On : Off;
+  if (_swift_backtraceSettings.enabled == OnOffTty::TTY)
+    _swift_backtraceSettings.enabled =
+      isStdoutATty() ? OnOffTty::On : OnOffTty::Off;
 
-  if (_swift_backtraceSettings.interactive == TTY)
-    _swift_backtraceSettings.interactive = isStdinATty() ? On : Off;
+  if (_swift_backtraceSettings.interactive == OnOffTty::TTY) {
+    _swift_backtraceSettings.interactive =
+      (isStdoutATty() && isStdinATty()) ? OnOffTty::On : OnOffTty::Off;
+  }
 
-  if (_swift_backtraceSettings.color == TTY)
-    _swift_backtraceSettings.color = isStdoutATty() ? On : Off;
+  if (_swift_backtraceSettings.color == OnOffTty::TTY)
+    _swift_backtraceSettings.color =
+      isStdoutATty() ? OnOffTty::On : OnOffTty::Off;
 
-  if (_swift_backtraceSettings.enabled
+  if (_swift_backtraceSettings.preset == Preset::Auto) {
+    if (_swift_backtraceSettings.interactive == OnOffTty::On)
+      _swift_backtraceSettings.preset = Preset::Friendly;
+    else
+      _swift_backtraceSettings.preset = Preset::Full;
+  }
+
+  if (_swift_backtraceSettings.enabled == OnOffTty::On
       && !_swift_backtraceSettings.swiftBacktracePath) {
     _swift_backtraceSettings.swiftBacktracePath
       = swift_getAuxiliaryExecutablePath("swift-backtrace");
@@ -228,11 +250,11 @@ BacktraceInitializer::BacktraceInitializer() {
       swift::warning(0,
                      "unable to locate swift-backtrace; "
                      "disabling backtracing.\n");
-      _swift_backtraceSettings.enabled = Off;
+      _swift_backtraceSettings.enabled = OnOffTty::Off;
     }
   }
 
-  if (_swift_backtraceSettings.enabled) {
+  if (_swift_backtraceSettings.enabled == OnOffTty::On) {
     // Copy the path to swift-backtrace into swiftBacktracePath, then write
     // protect it so that it can't be overwritten easily at runtime.  We do
     // this to avoid creating a massive security hole that would allow an
@@ -240,8 +262,8 @@ BacktraceInitializer::BacktraceInitializer() {
     // execute an arbitrary file.
 
 #if _WIN32
-    if (_swift_backtraceSettings.algorithm == Auto)
-      _swift_backtraceSettings.algorithm = Precise;
+    if (_swift_backtraceSettings.algorithm == UnwindAlgorithm::Auto)
+      _swift_backtraceSettings.algorithm = UnwindAlgorithm::Precise;
 
     int len = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
                                     _swift_backtraceSettings.swiftBacktracePath, -1,
@@ -252,7 +274,7 @@ BacktraceInitializer::BacktraceInitializer() {
                      "unable to convert path to swift-backtrace: %08lx; "
                      "disabling backtracing.\n",
                      ::GetLastError());
-      _swift_backtraceSettings.enabled = Off;
+      _swift_backtraceSettings.enabled = OnOffTty::Off;
     } else if (!VirtualProtect(swiftBacktracePath,
                                sizeof(swiftBacktracePath),
                                PAGE_READONLY,
@@ -261,7 +283,7 @@ BacktraceInitializer::BacktraceInitializer() {
                      "unable to protect path to swift-backtrace: %08lx; "
                      "disabling backtracing.\n",
                      ::GetLastError());
-      _swift_backtraceSettings.enabled = Off;
+      _swift_backtraceSettings.enabled = OnOffTty::Off;
     }
 
     _swift_backtraceSetupEnvironment();
@@ -274,18 +296,18 @@ BacktraceInitializer::BacktraceInitializer() {
                      "unable to protect environment for swift-backtrace: %08lx; "
                      "disabling backtracing.\n",
                      ::GetLastError());
-      _swift_backtraceSettings.enabled = Off;
+      _swift_backtraceSettings.enabled = OnOffTty::Off;
     }
 #else
-    if (_swift_backtraceSettings.algorithm == Auto)
-      _swift_backtraceSettings.algorithm = Precise;
+    if (_swift_backtraceSettings.algorithm == UnwindAlgorithm::Auto)
+      _swift_backtraceSettings.algorithm = UnwindAlgorithm::Precise;
 
     size_t len = strlen(_swift_backtraceSettings.swiftBacktracePath);
     if (len > SWIFT_BACKTRACE_BUFFER_SIZE - 1) {
       swift::warning(0,
                      "path to swift-backtrace is too long; "
                      "disabling backtracing.\n");
-      _swift_backtraceSettings.enabled = Off;
+      _swift_backtraceSettings.enabled = OnOffTty::Off;
     } else {
       memcpy(swiftBacktracePath,
              _swift_backtraceSettings.swiftBacktracePath,
@@ -299,7 +321,7 @@ BacktraceInitializer::BacktraceInitializer() {
                        "disabling backtracing.\n",
                        swiftBacktracePath,
                        errno);
-        _swift_backtraceSettings.enabled = Off;
+        _swift_backtraceSettings.enabled = OnOffTty::Off;
       }
     }
 
@@ -313,12 +335,12 @@ BacktraceInitializer::BacktraceInitializer() {
                        "at %p: %d; disabling backtracing.\n",
                        swiftBacktraceEnv,
                        errno);
-        _swift_backtraceSettings.enabled = Off;
+        _swift_backtraceSettings.enabled = OnOffTty::Off;
     }
 #endif
   }
 
-  if (_swift_backtraceSettings.enabled) {
+  if (_swift_backtraceSettings.enabled == OnOffTty::On) {
     ErrorCode err = _swift_installCrashHandler();
     if (err != 0) {
       swift::warning(0,
@@ -337,7 +359,7 @@ BacktraceInitializer::BacktraceInitializer() {
          "interactive: %s\n"
          "color: %s\n"
          "timeout: %u\n"
-         "level: %u\n"
+         "preset: %s\n"
          "swiftBacktracePath: %s\n",
          algorithmToString(_swift_backtraceSettings.algorithm),
          onOffTtyToString(_swift_backtraceSettings.enabled),
@@ -345,7 +367,7 @@ BacktraceInitializer::BacktraceInitializer() {
          onOffTtyToString(_swift_backtraceSettings.interactive),
          onOffTtyToString(_swift_backtraceSettings.color),
          _swift_backtraceSettings.timeout,
-         _swift_backtraceSettings.level,
+         presetToString(_swift_backtraceSettings.preset),
          swiftBacktracePath);
 
   printf("\nBACKTRACING ENV\n");
@@ -371,11 +393,11 @@ parseOnOffTty(llvm::StringRef value)
       || value.equals_insensitive("y")
       || value.equals_insensitive("t")
       || value.equals_insensitive("1"))
-    return On;
+    return OnOffTty::On;
   if (value.equals_insensitive("tty")
       || value.equals_insensitive("auto"))
-    return TTY;
-  return Off;
+    return OnOffTty::TTY;
+  return OnOffTty::Off;
 }
 
 bool
@@ -435,20 +457,28 @@ _swift_processBacktracingSetting(llvm::StringRef key,
     }
   } else if (key.equals_insensitive("unwind")) {
     if (value.equals_insensitive("auto"))
-      _swift_backtraceSettings.algorithm = Auto;
+      _swift_backtraceSettings.algorithm = UnwindAlgorithm::Auto;
     else if (value.equals_insensitive("fast"))
-      _swift_backtraceSettings.algorithm = Fast;
+      _swift_backtraceSettings.algorithm = UnwindAlgorithm::Fast;
     else if (value.equals_insensitive("precise"))
-      _swift_backtraceSettings.algorithm = Precise;
+      _swift_backtraceSettings.algorithm = UnwindAlgorithm::Precise;
     else {
       swift::warning(0,
-                     "unknown backtracing algorithm '%.*s'\n",
+                     "unknown unwind algorithm '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
-  } else if (key.equals_insensitive("level")) {
-    if (!value.getAsInteger(0, _swift_backtraceSettings.level)) {
+  } else if (key.equals_insensitive("preset")) {
+    if (value.equals_insensitive("auto"))
+      _swift_backtraceSettings.preset = Preset::Auto;
+    else if (value.equals_insensitive("friendly"))
+      _swift_backtraceSettings.preset = Preset::Friendly;
+    else if (value.equals_insensitive("medium"))
+      _swift_backtraceSettings.preset = Preset::Medium;
+    else if (value.equals_insensitive("full"))
+      _swift_backtraceSettings.preset = Preset::Full;
+    else {
       swift::warning(0,
-                     "bad backtracing level '%.*s'\n",
+                     "unknown backtracing preset '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("swift-backtrace")) {
@@ -573,6 +603,21 @@ _swift_backtraceSetupEnvironment()
 namespace swift {
 namespace runtime {
 namespace backtrace {
+
+/// Test if a Swift symbol name represents a thunk function.
+///
+/// In backtraces, it is often desirable to omit thunk frames as they usually
+/// just clutter up the backtrace unnecessarily.
+///
+/// @param mangledName is the symbol name to be tested.
+///
+/// @returns `true` if `mangledName` represents a thunk function.
+SWIFT_RUNTIME_STDLIB_SPI SWIFT_CC(swift) bool
+_swift_isThunkFunction(const char *mangledName) {
+  swift::Demangle::Context ctx;
+
+  return ctx.isThunkSymbol(mangledName);
+}
 
 // N.B. THIS FUNCTION MUST BE SAFE TO USE FROM A CRASH HANDLER.  On Linux
 // and macOS, that means it must be async-signal-safe.  On Windows, there

@@ -222,7 +222,6 @@ handle_fatal_signal(int signum,
 
 char addr_buf[18];
 char timeout_buf[22];
-char level_buf[22];
 const char *backtracer_argv[] = {
   "swift-backtrace",            // 0
   "--unwind",                   // 1
@@ -235,8 +234,8 @@ const char *backtracer_argv[] = {
   "true",                       // 8
   "--timeout",                  // 9
   timeout_buf,                  // 10
-  "--level",                    // 11
-  level_buf,                    // 12
+  "--preset",                   // 11
+  "friendly",                   // 12
   "--crashinfo",                // 13
   addr_buf,                     // 14
   NULL
@@ -296,6 +295,16 @@ format_unsigned(unsigned u, char buffer[22])
   }
 }
 
+const char *
+trueOrFalse(bool b) {
+  return b ? "true" : "false";
+}
+
+const char *
+trueOrFalse(OnOffTty oot) {
+  return trueOrFalse(oot == OnOffTty::On);
+}
+
 bool
 run_backtracer()
 {
@@ -321,7 +330,7 @@ run_backtracer()
 
   // Set-up the backtracer's command line arguments
   switch (_swift_backtraceSettings.algorithm) {
-  case Fast:
+  case UnwindAlgorithm::Fast:
     backtracer_argv[2] = "fast";
     break;
   default:
@@ -331,12 +340,23 @@ run_backtracer()
 
   // (The TTY option has already been handled at this point, so these are
   //  all either "On" or "Off".)
-  backtracer_argv[4] = _swift_backtraceSettings.symbolicate ? "true" : "false";
-  backtracer_argv[6] = _swift_backtraceSettings.interactive ? "true" : "false";
-  backtracer_argv[8] = _swift_backtraceSettings.color ? "true" : "false";
+  backtracer_argv[4] = trueOrFalse(_swift_backtraceSettings.symbolicate);
+  backtracer_argv[6] = trueOrFalse(_swift_backtraceSettings.interactive);
+  backtracer_argv[8] = trueOrFalse(_swift_backtraceSettings.color);
+
+  switch (_swift_backtraceSettings.preset) {
+  case Preset::Friendly:
+    backtracer_argv[12] = "friendly";
+    break;
+  case Preset::Medium:
+    backtracer_argv[12] = "medium";
+    break;
+  default:
+    backtracer_argv[12] = "full";
+    break;
+  }
 
   format_unsigned(_swift_backtraceSettings.timeout, timeout_buf);
-  format_unsigned(_swift_backtraceSettings.level, level_buf);
   format_address(&crashInfo, addr_buf);
 
   // Actually execute it

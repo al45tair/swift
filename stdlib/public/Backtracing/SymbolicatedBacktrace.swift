@@ -20,6 +20,11 @@ import Swift
 @_implementationOnly import _SwiftBacktracingShims
 @_implementationOnly import CoreFoundation
 
+@_silgen_name("_swift_isThunkFunction")
+func _swift_isThunkFunction(
+  _ rawName: UnsafePointer<CChar>?
+) -> CBool
+
 /// A symbolicated backtrace
 public struct SymbolicatedBacktrace: CustomStringConvertible {
   /// The `Backtrace` from which this was constructed
@@ -69,11 +74,22 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
       symbol?.isSwiftRuntimeFailure ?? false
     }
 
+    /// `true` if this frame represents a Swift thunk function.
+    public var isSwiftThunk: Bool {
+      symbol?.isSwiftThunk ?? false
+    }
+
+    /// `true` if this frame is a system frame.
+    public var isSystem: Bool {
+      symbol?.isSystemFunction ?? false
+    }
+
     /// A textual description of this frame.
     public var description: String {
       if let symbol = symbol {
-        let isInlined = inlined ? " [inlined]": ""
-        return "\(captured)\(isInlined) \(symbol)"
+        let isInlined = inlined ? " [inlined]" : ""
+        let isThunk = isSwiftThunk ? " [thunk]" : ""
+        return "\(captured)\(isInlined)\(isThunk) \(symbol)"
       } else {
         return captured.description
       }
@@ -100,7 +116,7 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
     /// The source location, if available.
     public var sourceLocation: SourceLocation?
 
-    /// True if this symbol represents a Swift runtime failure
+    /// True if this symbol represents a Swift runtime failure.
     public var isSwiftRuntimeFailure: Bool {
       guard let sourceLocation = sourceLocation else {
         return false
@@ -117,6 +133,24 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
         && sourceLocation.line == 0
         && sourceLocation.column == 0
         && sourceLocation.path.hasSuffix("<compiler-generated>")
+    }
+
+    /// True if this symbol is a Swift thunk function.
+    public var isSwiftThunk: Bool {
+      return _swift_isThunkFunction(rawName)
+    }
+
+    /// True if this symbol represents a system function.
+    ///
+    /// For instance, the `start` function from `dyld` on macOS is a system
+    /// function, and we don't need to display it under normal circumstances.
+    public var isSystemFunction: Bool {
+      #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+      if rawName == "start" && imageName == "dyld" {
+        return true
+      }
+      #endif
+      return false
     }
 
     /// Construct a new Symbol.

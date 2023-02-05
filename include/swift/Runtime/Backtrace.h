@@ -17,6 +17,8 @@
 #ifndef SWIFT_RUNTIME_BACKTRACE_H
 #define SWIFT_RUNTIME_BACKTRACE_H
 
+#include "swift/Runtime/Config.h"
+
 #include "swift/shims/Visibility.h"
 #include "swift/shims/_SwiftBacktracing.h"
 
@@ -40,16 +42,23 @@ SWIFT_RUNTIME_STDLIB_INTERNAL ErrorCode _swift_installCrashHandler();
 
 SWIFT_RUNTIME_STDLIB_INTERNAL bool _swift_spawnBacktracer(const ArgChar * const *argv);
 
-enum UnwindAlgorithm {
+enum class UnwindAlgorithm {
   Auto = 0,
   Fast = 1,
   Precise = 2
 };
 
-enum OnOffTty {
+enum class OnOffTty {
   Off = 0,
   On = 1,
   TTY = 2
+};
+
+enum class Preset {
+  Auto = 0,
+  Friendly = 0,
+  Medium = 1,
+  Full = 2
 };
 
 struct BacktraceSettings {
@@ -59,12 +68,13 @@ struct BacktraceSettings {
   OnOffTty         interactive;
   OnOffTty         color;
   unsigned         timeout;
-  unsigned         level;
+  Preset           preset;
   const char      *swiftBacktracePath;
 };
 
 SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings;
 
+SWIFT_RUNTIME_STDLIB_SPI SWIFT_CC(swift) bool _swift_isThunkFunction(const char *mangledName);
 
 #ifdef __cplusplus
 } // namespace backtrace

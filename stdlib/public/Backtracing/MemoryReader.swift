@@ -28,9 +28,9 @@ import Swift
   func fetch<T>(from addr: Address,
                 into pointer: UnsafeMutablePointer<T>) throws
 
-  func fetch<T>(type: T.Type, from addr: Address, count: Int) throws -> [T]
+  func fetch<T>(from addr: Address, count: Int, as: T.Type) throws -> [T]
 
-  func fetch<T>(from addr: Address) throws -> T
+  func fetch<T>(from addr: Address, as: T.Type) throws -> T
 }
 
 extension MemoryReader {
@@ -41,7 +41,7 @@ extension MemoryReader {
               into: UnsafeMutableBufferPointer(start: pointer, count: 1))
   }
 
-  public func fetch<T>(type: T.Type, from addr: Address, count: Int) throws -> [T] {
+  public func fetch<T>(from addr: Address, count: Int, as: T.Type) throws -> [T] {
     let array = try Array<T>(unsafeUninitializedCapacity: count){
       buffer, initializedCount in
 
@@ -53,7 +53,7 @@ extension MemoryReader {
     return array
   }
 
-  public func fetch<T>(from addr: Address) throws -> T {
+  public func fetch<T>(from addr: Address, as: T.Type) throws -> T {
     return try withUnsafeTemporaryAllocation(of: T.self, capacity: 1) { buf in
       try fetch(from: addr, into: buf)
       return buf[0]

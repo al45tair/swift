@@ -29,7 +29,7 @@ import Swift
 
 /// A backtrace formatting theme.
 @_spi(Formatting)
-public protocol BacktraceFormattingThemeProtocol {
+public protocol BacktraceFormattingTheme {
   func frameIndex(_ s: String) -> String
   func programCounter(_ s: String) -> String
   func frameAttribute(_ s: String) -> String
@@ -46,7 +46,7 @@ public protocol BacktraceFormattingThemeProtocol {
   func imagePath(_ s: String) -> String
 }
 
-extension BacktraceFormattingThemeProtocol {
+extension BacktraceFormattingTheme {
   public func frameIndex(_ s: String) -> String { return s }
   public func programCounter(_ s: String) -> String { return s }
   public func frameAttribute(_ s: String) -> String { return "[\(s)]" }
@@ -68,27 +68,31 @@ extension BacktraceFormattingThemeProtocol {
 /// This is used by chaining modifiers, e.g. .theme(.color).showSourceCode().
 @_spi(Formatting)
 public struct BacktraceFormattingOptions {
-  var _theme: BacktraceFormattingThemeProtocol = BacktraceFormatter.Themes.plain
+  var _theme: BacktraceFormattingTheme = BacktraceFormatter.Themes.plain
   var _showSourceCode: Bool = false
   var _sourceContextLines: Int = 2
   var _showAddresses: Bool = true
-  var _showImages: Bool = true
+  var _showImages: ImagesToShow = .mentioned
   var _showImageNames: Bool = true
   var _showFrameAttributes: Bool = true
   var _skipRuntimeFailures: Bool = false
+  var _skipThunkFunctions: Bool = true
+  var _skipSystemFrames: Bool = true
   var _sanitizePaths: Bool = true
   var _demangle: Bool = true
   var _width: Int = 80
+
+  public init() {}
 
   /// Theme to use for formatting.
   ///
   /// @param theme  A `BacktraceFormattingTheme` structure.
   ///
   /// @returns A new `BacktraceFormattingOptions` structure.
-  public static func theme(_ theme: BacktraceFormattingThemeProtocol) -> BacktraceFormattingOptions {
+  public static func theme(_ theme: BacktraceFormattingTheme) -> BacktraceFormattingOptions {
     return BacktraceFormattingOptions().theme(theme)
   }
-  public func theme(_ theme: BacktraceFormattingThemeProtocol) -> BacktraceFormattingOptions {
+  public func theme(_ theme: BacktraceFormattingTheme) -> BacktraceFormattingOptions {
     var newOptions = self
     newOptions._theme = theme
     return newOptions
@@ -133,12 +137,17 @@ public struct BacktraceFormattingOptions {
   /// @param enabled  Says whether or not to output the image list.
   ///
   /// @returns A new `BacktraceFormattingOptions` structure.
-  public static func showImages(_ enabled: Bool = true) -> BacktraceFormattingOptions {
-    return BacktraceFormattingOptions().showImages(enabled)
+  public enum ImagesToShow {
+    case none
+    case mentioned
+    case all
   }
-  public func showImages(_ enabled: Bool = true) -> BacktraceFormattingOptions {
+  public static func showImages(_ toShow: ImagesToShow = .all) -> BacktraceFormattingOptions {
+    return BacktraceFormattingOptions().showImages(toShow)
+  }
+  public func showImages(_ toShow: ImagesToShow = .all) -> BacktraceFormattingOptions {
     var newOptions = self
-    newOptions._showImages = enabled
+    newOptions._showImages = toShow
     return newOptions
   }
 
@@ -182,6 +191,37 @@ public struct BacktraceFormattingOptions {
   public func skipRuntimeFailures(_ enabled: Bool = true) -> BacktraceFormattingOptions {
     var newOptions = self
     newOptions._skipRuntimeFailures = enabled
+    return newOptions
+  }
+
+  /// Set whether or not to show Swift thunk function frames.
+  ///
+  /// @param enabled  If true, we will skip Swift thunk function frames.
+  ///
+  /// @returns A new `BacktraceFormattingOptions` structure.
+  public static func skipThunkFunctions(_ enabled: Bool = true) -> BacktraceFormattingOptions {
+    return BacktraceFormattingOptions().skipThunkFunctions(enabled)
+  }
+  public func skipThunkFunctions(_ enabled: Bool = true) -> BacktraceFormattingOptions {
+    var newOptions = self
+    newOptions._skipThunkFunctions = enabled
+    return newOptions
+  }
+
+  /// Set whether or not to show system frames.
+  ///
+  /// For instance, on macOS, this will cause us to skip the "start" frame
+  /// at the very top of the stack.
+  ///
+  /// @param enabled  If true, we will skip system frames.
+  ///
+  /// @returns A new `BacktraceFormattingOptions` structure.
+  public static func skipSystemFrames(_ enabled: Bool = true) -> BacktraceFormattingOptions {
+    return BacktraceFormattingOptions().skipSystemFrames(enabled)
+  }
+  public func skipSystemFrames(_ enabled: Bool = true) -> BacktraceFormattingOptions {
+    var newOptions = self
+    newOptions._skipSystemFrames = enabled
     return newOptions
   }
 
@@ -374,6 +414,18 @@ private func sanitizePath(_ path: String) -> String {
   #endif
 }
 
+/// Trim whitespace from the right hand end of a string.
+///
+/// @param s  The string to trim.
+///
+/// @returns A string with the whitespace trimmed.
+private func rtrim<S: StringProtocol>(_ s: S) -> S.SubSequence {
+  if let lastNonWhitespace = s.lastIndex(where: { !$0.isWhitespace }) {
+    return s.prefix(through: lastNonWhitespace)
+  }
+  return s.dropLast(0)
+}
+
 /// Responsible for formatting backtraces.
 @_spi(Formatting)
 public struct BacktraceFormatter {
@@ -383,58 +435,10 @@ public struct BacktraceFormatter {
 
   public struct Themes {
     /// A plain formatting theme.
-    public struct PlainTheme: BacktraceFormattingThemeProtocol {
-    }
-
-    /// An ANSI color formatting theme.
-    public struct AnsiColorTheme: BacktraceFormattingThemeProtocol {
-      public func frameIndex(_ s: String) -> String {
-        return "\u{1b}[90m\(s)\u{1b}[39m"
-      }
-      public func programCounter(_ s: String) -> String {
-        return "\u{1b}[32m\(s)\u{1b}[39m"
-      }
-      public func frameAttribute(_ s: String) -> String {
-        return "\u{1b}[34m[\(s)]\u{1b}[39m"
-      }
-
-      public func symbol(_ s: String) -> String {
-        return "\u{1b}[95m\(s)\u{1b}[39m"
-      }
-      public func offset(_ s: String) -> String {
-        return "\u{1b}[37m\(s)\u{1b}[39m"
-      }
-      public func sourceLocation(_ s: String) -> String {
-        return "\u{1b}[33m\(s)\u{1b}[39m"
-      }
-      public func lineNumber(_ s: String) -> String {
-        return "\u{1b}[90m\(s)\u{1b}[39m"
-      }
-      public func code(_ s: String) -> String {
-        return "\(s)"
-      }
-      public func crashedLine(_ s: String) -> String {
-        return "\u{1b}[48;5;234m\(s)\u{1b}[49m"
-      }
-      public func crashLocation(_ s: String) -> String {
-        return "\u{1b}[91m\(s)\u{1b}[39m"
-      }
-      public func imageName(_ s: String) -> String {
-        return "\u{1b}[36m\(s)\u{1b}[39m"
-      }
-      public func imageAddressRange(_ s: String) -> String {
-        return "\u{1b}[32m\(s)\u{1b}[39m"
-      }
-      public func imageBuildID(_ s: String) -> String {
-        return "\u{1b}[37m\(s)\u{1b}[39m"
-      }
-      public func imagePath(_ s: String) -> String {
-        return "\u{1b}[90m\(s)\u{1b}[39m"
-      }
+    public struct PlainTheme: BacktraceFormattingTheme {
     }
 
     public static let plain = PlainTheme()
-    public static let color = AnsiColorTheme()
   }
 
   public init(_ options: BacktraceFormattingOptions) {
@@ -480,7 +484,7 @@ public struct BacktraceFormatter {
     }
 
     // Generate lines for the table
-    var lines: [String] = []
+    var lines: [Substring] = []
     for row in rows {
       switch row {
         case let .columns(columns):
@@ -493,13 +497,18 @@ public struct BacktraceFormatter {
             }
           }.joined(separator: " ")
 
-          lines.append(line)
+          lines.append(rtrim(line))
         case let .raw(line):
-          lines.append(line)
+          lines.append(rtrim(line))
       }
     }
 
-    return lines.joined(separator: "\n")
+    // Trim any empty lines from the end
+    guard let lastNonEmpty = lines.lastIndex(where: { !$0.isEmpty }) else {
+      return ""
+    }
+
+    return lines.prefix(through: lastNonEmpty).joined(separator: "\n")
   }
 
   /// Format an individual frame into a list of columns.
@@ -574,7 +583,7 @@ public struct BacktraceFormatter {
   /// @param frames  The frames to format.
   ///
   /// @result A `String` containing the formatted data.
-  public func format(frames: [Backtrace.Frame]) -> String {
+  public func format(frames: some Sequence<Backtrace.Frame>) -> String {
     var rows: [TableRow] = []
 
     var n = 0
@@ -720,6 +729,14 @@ public struct BacktraceFormatter {
       attrs.append("inlined")
     }
 
+    if frame.isSwiftThunk {
+      attrs.append("thunk")
+    }
+
+    if frame.isSystem {
+      attrs.append("system")
+    }
+
     var formattedSymbol: String? = nil
     var hasSourceLocation = false
 
@@ -788,12 +805,13 @@ public struct BacktraceFormatter {
       columns.append(frameIndex)
     }
 
-    columns.append(location)
     if options._showFrameAttributes {
       columns.append(attrs.map(
                        options._theme.frameAttribute
                      ).joined(separator: " "))
     }
+
+    columns.append(location)
 
     return columns
   }
@@ -836,18 +854,25 @@ public struct BacktraceFormatter {
     return BacktraceFormatter.formatTable(rows, alignments: [.right])
   }
 
+  /// Return `true` if we should skip the specified frame
+  public func shouldSkip(_ frame: SymbolicatedBacktrace.Frame) -> Bool {
+    return (options._skipRuntimeFailures && frame.isSwiftRuntimeFailure)
+      || (options._skipSystemFrames && frame.isSystem)
+      || (options._skipThunkFunctions && frame.isSwiftThunk)
+  }
+
   /// Format the frame list from a symbolicated backtrace.
   ///
   /// @param frames  The frames to format.
   ///
   /// @result A `String` containing the formatted data.
-  public func format(frames: [SymbolicatedBacktrace.Frame]) -> String {
+  public func format(frames: some Sequence<SymbolicatedBacktrace.Frame>) -> String {
     var rows: [TableRow] = []
     var sourceLocationsShown = Set<SymbolicatedBacktrace.SourceLocation>()
 
     var n = 0
     for frame in frames {
-      if options._skipRuntimeFailures && frame.isSwiftRuntimeFailure {
+      if shouldSkip(frame) {
         continue
       }
 
@@ -879,7 +904,36 @@ public struct BacktraceFormatter {
   ///
   /// @result A `String` containing the formatted data.
   public func format(backtrace: SymbolicatedBacktrace) -> String {
-    return format(frames: backtrace.frames)
+    var result = format(frames: backtrace.frames)
+
+    switch options._showImages {
+      case .none:
+        break
+      case .all:
+        result += "\n\nImages:\n"
+        result += format(images: backtrace.images)
+      case .mentioned:
+        var mentionedImages = Set<Int>()
+        for frame in backtrace.frames {
+          if shouldSkip(frame) {
+            continue
+          }
+          if let symbol = frame.symbol, symbol.imageIndex >= 0 {
+            mentionedImages.insert(symbol.imageIndex)
+          }
+        }
+
+        let images = mentionedImages.sorted().map{ backtrace.images[$0] }
+        let omitted = backtrace.images.count - images.count
+        if omitted > 0 {
+          result += "\n\nImages (\(omitted) omitted):\n"
+        } else {
+          result += "\n\nImages (only mentioned):\n"
+        }
+        result += format(images: images)
+    }
+
+    return result
   }
 
   /// Format a `Backtrace.Image` into a list of columns.
@@ -914,7 +968,7 @@ public struct BacktraceFormatter {
   /// @param images  The array of `Image` objects to format.
   ///
   /// @result A string containing the formatted data.
-  public func format(images: [Backtrace.Image]) -> String {
+  public func format(images: some Sequence<Backtrace.Image>) -> String {
     let rows = images.map{ TableRow.columns(formatColumns(image: $0)) }
 
     return BacktraceFormatter.formatTable(rows)
