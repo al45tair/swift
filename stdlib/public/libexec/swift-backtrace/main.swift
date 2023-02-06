@@ -131,6 +131,12 @@ Generate a backtrace for the parent process.
 """)
   }
 
+  static func parseBool(_ s: some StringProtocol) -> Bool {
+    let lowered = s.lowercased()
+    return lowered == "yes" || lowered == "y" ||
+      lowered == "true" || lowered == "t" || lowered == "on"
+  }
+
   static func handleArgument(_ arg: String, value: String?) {
     switch arg {
       case "-?", "--help":
@@ -155,19 +161,19 @@ Generate a backtrace for the parent process.
         }
       case "-s", "--symbolicate":
         if let v = value {
-          args.symbolicate = v.lowercased() == "true"
+          args.symbolicate = parseBool(v)
         } else {
           args.symbolicate = true
         }
       case "-i", "--interactive":
         if let v = value {
-          args.interactive = v.lowercased() == "true"
+          args.interactive = parseBool(v)
         } else {
           args.interactive = true
         }
       case "-c", "--color":
         if let v = value {
-          args.color = v.lowercased() == "true"
+          args.color = parseBool(v)
         } else {
           args.color = true
         }
@@ -204,7 +210,7 @@ Generate a backtrace for the parent process.
         }
       case "-h", "--threads":
         if let v = value {
-          args.threads = v.lowercased() == "true"
+          args.threads = parseBool(v)
         } else {
           args.threads = true
         }
@@ -721,8 +727,17 @@ Generate a backtrace for the parent process.
             let top = "\(args.top)"
 
             print("""
-                    limit = \(limit)
-                    top   = \(top)
+                    addresses      = \(formattingOptions.shouldShowAddresses)
+                    demangle       = \(formattingOptions.shouldDemangle)
+                    frame-attrs    = \(formattingOptions.shouldShowFrameAttributes)
+                    image-names    = \(formattingOptions.shouldShowImageNames)
+                    limit          = \(limit)
+                    sanitize       = \(formattingOptions.shouldSanitizePaths)
+                    source         = \(formattingOptions.shouldShowSourceCode)
+                    source-context = \(formattingOptions.sourceContextLines)
+                    system-frames  = \(!formattingOptions.shouldSkipSystemFrames)
+                    thunks         = \(!formattingOptions.shouldSkipThunkFunctions)
+                    top            = \(top)
                     """)
           } else {
             for optval in cmd[1...] {
@@ -732,13 +747,30 @@ Generate a backtrace for the parent process.
                 let option = parts[0]
 
                 switch option {
+                  case "addresses":
+                    print("addresses = \(formattingOptions.shouldShowAddresses)")
+                  case "demangle":
+                    print("demangle = \(formattingOptions.shouldDemangle)")
+                  case "frame-attrs":
+                    print("frame-attrs = \(formattingOptions.shouldShowFrameAttributes)")
+                  case "image-names":
+                    print("image-names = \(formattingOptions.shouldShowImageNames)")
                   case "limit":
                     if let limit = args.limit {
                       print("limit = \(limit)")
                     } else {
                       print("limit = none")
                     }
-
+                  case "sanitize":
+                    print("sanitize = \(formattingOptions.shouldSanitizePaths)")
+                  case "source":
+                    print("source = \(formattingOptions.shouldShowSourceCode)")
+                  case "source-context":
+                    print("source-context = \(formattingOptions.sourceContextLines)")
+                  case "system-frames":
+                    print("system-frames = \(!formattingOptions.shouldSkipSystemFrames)")
+                  case "thunks":
+                    print("thunks = \(!formattingOptions.shouldSkipThunkFunctions)")
                   case "top":
                     print("top = \(args.top)")
 
@@ -769,6 +801,48 @@ Generate a backtrace for the parent process.
                     } else {
                       print(theme.error("bad top value '\(value)'"))
                     }
+
+                  case "source":
+                    formattingOptions =
+                      formattingOptions.showSourceCode(parseBool(value),
+                                                       contextLines: formattingOptions.sourceContextLines)
+
+                  case "source-context":
+                    if let lines = Int(value), lines >= 0 {
+                      formattingOptions =
+                        formattingOptions.showSourceCode(formattingOptions.shouldShowSourceCode,
+                                                         contextLines: lines)
+                    } else {
+                      print(theme.error("bad source-context value '\(value)'"))
+                    }
+
+                  case "thunks":
+                    formattingOptions =
+                      formattingOptions.skipThunkFunctions(!parseBool(value))
+
+                  case "system-frames":
+                    formattingOptions =
+                      formattingOptions.skipSystemFrames(!parseBool(value))
+
+                  case "frame-attrs":
+                    formattingOptions =
+                      formattingOptions.showFrameAttributes(parseBool(value))
+
+                  case "addresses":
+                    formattingOptions =
+                      formattingOptions.showAddresses(parseBool(value))
+
+                  case "sanitize":
+                    formattingOptions =
+                      formattingOptions.sanitizePaths(parseBool(value))
+
+                  case "demangle":
+                    formattingOptions =
+                      formattingOptions.demangle(parseBool(value))
+
+                  case "image-names":
+                    formattingOptions =
+                      formattingOptions.showImageNames(parseBool(value))
 
                   default:
                     print(theme.error("unknown option '\(option)'"))

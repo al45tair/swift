@@ -82,6 +82,20 @@ public struct BacktraceFormattingOptions {
   var _demangle: Bool = true
   var _width: Int = 80
 
+  public var selectedTheme: BacktraceFormattingTheme { return _theme }
+  public var shouldShowSourceCode: Bool { return _showSourceCode }
+  public var sourceContextLines: Int { return _sourceContextLines }
+  public var shouldShowAddresses: Bool { return _showAddresses }
+  public var imagesToShow: ImagesToShow { return _showImages }
+  public var shouldShowImageNames: Bool { return _showImageNames }
+  public var shouldShowFrameAttributes: Bool { return _showFrameAttributes }
+  public var shouldSkipRuntimeFailures: Bool { return _skipRuntimeFailures }
+  public var shouldSkipThunkFunctions: Bool { return _skipThunkFunctions }
+  public var shouldSkipSystemFrames: Bool { return _skipSystemFrames }
+  public var shouldSanitizePaths: Bool { return _sanitizePaths }
+  public var shouldDemangle: Bool { return _demangle }
+  public var formattingWidth: Int { return _width }
+
   public init() {}
 
   /// Theme to use for formatting.
