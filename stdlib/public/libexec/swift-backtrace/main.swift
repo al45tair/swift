@@ -312,6 +312,7 @@ Generate a backtrace for the parent process.
     switch args.preset {
       case .friendly, .none:
         formattingOptions =
+          .skipRuntimeFailures(true)
           .showAddresses(false)
           .showSourceCode(true)
           .showFrameAttributes(false)
@@ -327,6 +328,7 @@ Generate a backtrace for the parent process.
         }
       case .medium:
         formattingOptions =
+          .skipRuntimeFailures(true)
           .showSourceCode(true)
           .showFrameAttributes(true)
         if args.threads == nil {
@@ -371,10 +373,16 @@ Generate a backtrace for the parent process.
       // Make sure we're line buffered
       setvbuf(stdout, nil, _IOLBF, 0)
 
-      if let ch = waitForKey("Press space to interact, or any other key to quit",
-                             timeout: args.timeout),
-         ch == UInt8(ascii: " ") {
-        interactWithUser()
+      while let ch = waitForKey("Press space to interact, D to debug, or any other key to quit",
+                                timeout: args.timeout) {
+        switch UInt8(ch) {
+          case UInt8(ascii: " "):
+            interactWithUser()
+          case UInt8(ascii: "D"), UInt8(ascii: "d"):
+            startDebugger()
+          default:
+            exit(0)
+        }
       }
     }
 
@@ -424,7 +432,7 @@ Generate a backtrace for the parent process.
     tcsetattr(0, TCSANOW, &theMode)
   }
 
-  static func waitForKey(_ message: String, timeout: Int) -> Int32? {
+  static func waitForKey(_ message: String, timeout: Int?) -> Int32? {
     let oldMode = setRawMode()
 
     defer {
@@ -433,6 +441,7 @@ Generate a backtrace for the parent process.
       resetInputMode(mode: oldMode)
     }
 
+    if let timeout = timeout {
     var remaining = timeout
 
     while true {
@@ -452,14 +461,18 @@ Generate a backtrace for the parent process.
         break
       }
 
-      let ch = getchar()
-      return ch
+      return getchar()
+    }
+    } else {
+      print("\r\(message)", terminator: "")
+      fflush(stdout)
+      return getchar()
     }
 
     return nil
   }
   #elseif os(Windows)
-  static func waitForKey(_ message: String, timeout: Int) -> Int32? {
+  static func waitForKey(_ message: String, timeout: Int?) -> Int32? {
     // ###TODO
     return nil
   }
@@ -564,6 +577,24 @@ Generate a backtrace for the parent process.
     }
   }
 
+  static func startDebugger() {
+    guard let target = target else {
+      return
+    }
+
+    do {
+      try target.withDebugger {
+
+        if let ch = waitForKey("Press any key once LLDB is attached, or A to abort", timeout: nil),
+           ch != UInt8(ascii: "A") && ch != UInt8(ascii: "a") {
+          exit(0)
+        }
+      }
+    } catch {
+      print(theme.error("unable to spawn debugger"))
+    }
+  }
+
   static func interactWithUser() {
     guard let target = target else {
       return
@@ -587,6 +618,8 @@ Generate a backtrace for the parent process.
       switch cmd[0].lowercased() {
         case "exit", "quit":
           return
+        case "debug":
+          startDebugger()
         case "bt", "backtrace":
           let formatter = backtraceFormatter()
           let backtrace = target.threads[currentThread].backtrace
@@ -860,6 +893,7 @@ Generate a backtrace for the parent process.
 
                   backtrace  Display a backtrace.
                   bt         Synonym for backtrace.
+                  debug      Attach the debugger.
                   exit       Exit interaction, allowing program to crash normally.
                   help       Display help.
                   images     List images loaded by the program.

@@ -289,6 +289,43 @@ class Target {
       threads[ndx].backtrace = symbolicated
     }
   }
+
+  public func withDebugger(_ body: () -> ()) throws {
+    #if os(macOS)
+    return try withTemporaryDirectory(pattern: "backtrace.XXXXXXXX") {
+      tmpdir in
+
+      let cmdfile = "\(tmpdir)/lldb.command"
+      guard let fp = fopen(cmdfile, "wt") else {
+        throw PosixError(errno: errno)
+      }
+      if fputs("""
+                 #!/bin/bash
+                 clear
+                 xcrun lldb --attach-pid \(pid) -o c
+                 """, fp) == EOF {
+        throw PosixError(errno: errno)
+      }
+      if fclose(fp) != 0 {
+        throw PosixError(errno: errno)
+      }
+      if chmod(cmdfile, S_IXUSR|S_IRUSR) != 0 {
+        throw PosixError(errno: errno)
+      }
+
+      try spawn("/usr/bin/open", args: ["open", cmdfile])
+
+      body()
+    }
+    #else
+    print("""
+            From another shell, please run
+
+            lldb --attach-pid \(target.pid) -o c
+            """)
+    body()
+    #endif
+  }
 }
 
 private func mach_thread_info<T>(_ thread: thread_t,

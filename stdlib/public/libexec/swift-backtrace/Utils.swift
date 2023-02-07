@@ -14,6 +14,14 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if canImport(Darwin)
+import Darwin.C
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(MSVCRT)
+import MSVCRT
+#endif
+
 import Swift
 
 internal func hex<T: FixedWidthInteger>(_ value: T,
@@ -42,3 +50,89 @@ internal func parseUInt64<S: StringProtocol>(_ s: S) -> UInt64? {
     return UInt64(s, radix: 10)
   }
 }
+
+struct PosixError: Error {
+  var errno: Int32
+
+  var desription: String {
+    return String(cString: strerror(self.errno))
+  }
+}
+
+internal func recursiveRemoveContents(_ dir: String) throws {
+  guard let dirp = opendir(dir) else {
+    throw PosixError(errno: errno)
+  }
+  defer {
+    closedir(dirp)
+  }
+  while let dp = readdir(dirp) {
+    let len = Int(dp.pointee.d_namlen)
+    let name: String =
+      withUnsafePointer(to: &dp.pointee.d_name) {
+        return $0.withMemoryRebound(to: UInt8.self,
+                                    capacity: len) {
+          return String(decoding: UnsafeBufferPointer(start: $0,
+                                                      count: len),
+                        as: UTF8.self)
+        }
+      }
+    if name == "." || name == ".." {
+      continue
+    }
+    let fullPath = "\(dir)/\(name)"
+    if dp.pointee.d_type == DT_DIR {
+      try recursiveRemove(fullPath)
+    } else {
+      if unlink(fullPath) != 0 {
+        throw PosixError(errno: errno)
+      }
+    }
+  }
+}
+
+internal func recursiveRemove(_ dir: String) throws {
+  try recursiveRemoveContents(dir)
+
+  if rmdir(dir) != 0 {
+    throw PosixError(errno: errno)
+  }
+}
+
+internal func withTemporaryDirectory(pattern: String, shouldDelete: Bool = true,
+                                     body: (String) throws -> ()) throws {
+  var buf = Array<UInt8>(pattern.utf8)
+  buf.append(0)
+
+  guard let dir = buf.withUnsafeMutableBufferPointer({
+    if let ptr = mkdtemp($0.baseAddress) {
+      return String(cString: ptr)
+    }
+    return nil
+  }) else {
+    throw PosixError(errno: errno)
+  }
+
+  defer {
+    if shouldDelete {
+      try? recursiveRemove(dir)
+    }
+  }
+
+  try body(dir)
+}
+
+internal func spawn(_ path: String, args: [String]) throws {
+  var cargs = args.map{ strdup($0) }
+  cargs.append(nil)
+  let result = cargs.withUnsafeBufferPointer{
+    posix_spawn(nil, path, nil, nil, $0.baseAddress, nil)
+  }
+  for arg in cargs {
+    free(arg)
+  }
+  if result != 0 {
+    throw PosixError(errno: errno)
+  }
+}
+
