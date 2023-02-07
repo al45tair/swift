@@ -490,7 +490,7 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
   Opts.DisableImplicitBacktracingModuleImport =
     Args.hasFlag(OPT_disable_implicit_backtracing_module_import,
                  OPT_enable_implicit_backtracing_module_import,
-                 false);
+                 true);
 
   if (Args.hasArg(OPT_enable_experimental_async_top_level))
     Diags.diagnose(SourceLoc(), diag::warn_flag_deprecated,
