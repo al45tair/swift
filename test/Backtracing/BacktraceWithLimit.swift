@@ -10,7 +10,7 @@ import _Backtracing
 
 func doFrames(_ count: Int) {
   if count <= 0 {
-    let backtrace = try! Backtrace.capture(limit: 10)
+    let backtrace = try! Backtrace.capture(limit: 10, top: 0)
 
     print(backtrace)
   } else {

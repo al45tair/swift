@@ -9,22 +9,29 @@
 // REQUIRES: concurrency_runtime
 // UNSUPPORTED: back_deployment_runtime
 
+import _Backtracing
+
+@available(SwiftStdlib 5.1, *)
 func level1() async {
   await level2()
 }
 
+@available(SwiftStdlib 5.1, *)
 func level2() async {
   level3()
 }
 
+@available(SwiftStdlib 5.1, *)
 func level3() {
   level4()
 }
 
+@available(SwiftStdlib 5.1, *)
 func level4() {
   level5()
 }
 
+@available(SwiftStdlib 5.1, *)
 func level5() {
   let backtrace = try! Backtrace.capture()
 
@@ -38,6 +45,7 @@ func level5() {
   print(backtrace)
 }
 
+@available(SwiftStdlib 5.1, *)
 @main
 struct SimpleAsyncBacktrace {
   static func main() async {
