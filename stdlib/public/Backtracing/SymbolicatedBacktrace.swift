@@ -149,6 +149,13 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
       if rawName == "start" && imageName == "dyld" {
         return true
       }
+      if let location = sourceLocation,
+         location.line == 0 && location.column == 0 {
+        return true
+      }
+      if rawName.hasSuffix("$mainyyFZ") {
+        return true
+      }
       #endif
       return false
     }
@@ -288,7 +295,7 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
       return Frame(captured: capturedFrame, symbol: nil)
     }
 
-    let address = capturedFrame.adjustedProgramCounter
+    let address = capturedFrame.originalProgramCounter
     let rawName = CSSymbolGetMangledName(symbol) ?? "<unknown>"
     let name = CSSymbolGetName(symbol) ?? rawName
     let range = CSSymbolGetRange(symbol)

@@ -113,8 +113,59 @@ private enum Sym {
 
 // .. Crash Reporter support ...................................................
 
+// We can't import swiftFoundation here, so there's no automatic bridging for
+// CFString.  As a result, we need to do the dance manually.
+
+private func toCFString(_ s: String) -> CFString! {
+  let bytes = Array<UInt8>(s.utf8)
+  return bytes.withUnsafeBufferPointer{
+    return CFStringCreateWithBytes(nil,
+                                   $0.baseAddress,
+                                   $0.count,
+                                   CFStringBuiltInEncodings.UTF8.rawValue,
+                                   false)
+  }
+}
+
+private func fromCFString(_ cf: CFString) -> String {
+  let length = CFStringGetLength(cf)
+  if length == 0 {
+    return ""
+  }
+
+  if let ptr = CFStringGetCStringPtr(cf,
+                                     CFStringBuiltInEncodings.ASCII.rawValue) {
+    return ptr.withMemoryRebound(to: UInt8.self, capacity: length) {
+      return String(decoding: UnsafeBufferPointer(start: $0, count: length),
+                    as: UTF8.self)
+    }
+  } else {
+    var byteLen = CFIndex(0)
+
+    CFStringGetBytes(cf,
+                     CFRangeMake(0, length),
+                     CFStringBuiltInEncodings.UTF8.rawValue,
+                     0,
+                     false,
+                     nil,
+                     0,
+                     &byteLen)
+
+    let buffer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: byteLen)
+    defer {
+      buffer.deallocate()
+    }
+
+    CFStringGetBytes(cf, CFRangeMake(0, length),
+                     CFStringBuiltInEncodings.UTF8.rawValue,
+                     0, false, buffer.baseAddress, buffer.count, nil)
+
+    return String(decoding: buffer, as: UTF8.self)
+  }
+}
+
 func CRCopySanitizedPath(_ path: String, _ options: Int) -> String {
-  return Sym.CRCopySanitizedPath(path as! CFString, CFIndex(options)) as! String
+  return fromCFString(Sym.CRCopySanitizedPath(toCFString(path), CFIndex(options)))
 }
 
 // .. Base functionality .......................................................

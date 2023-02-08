@@ -542,13 +542,6 @@ public struct BacktraceFormatter {
       case let .returnAddress(address):
         pc = "\(hex(address))"
         attrs.append("ra")
-      case let .programCounterInAsync(address):
-        pc = "\(hex(address))"
-        attrs.append("ra")
-      case let .returnAddressInAsync(address):
-        pc = "\(hex(address))"
-        attrs.append("ra")
-        attrs.append("async")
       case let .asyncResumePoint(address):
         pc = "\(hex(address))"
         attrs.append("async")
@@ -667,18 +660,25 @@ public struct BacktraceFormatter {
           // `untabified`.  We should point at the grapheme cluster that
           // contains that UTF-8 index.
           let adjustedColumn = max(sourceLocation.column, 1)
-          let utf8Ndx = untabified.utf8.index(untabified.utf8.startIndex,
-                                              offsetBy: adjustedColumn)
+          let utf8Ndx
+            = untabified.utf8.index(untabified.utf8.startIndex,
+                                    offsetBy: adjustedColumn,
+                                    limitedBy: untabified.utf8.endIndex)
+            ?? untabified.utf8.endIndex
 
           // Adjust it to point at a grapheme cluster start
-          let strNdx = untabified.index(before:
-                                          untabified.index(after: utf8Ndx))
+          let strNdx = untabified.index(
+            untabified.index(utf8Ndx, offsetBy: 1,
+                             limitedBy: untabified.endIndex)
+              ?? untabified.endIndex,
+            offsetBy: -1,
+            limitedBy: untabified.startIndex) ?? untabified.startIndex
 
           // Work out the terminal width up to that point
           let terminalWidth = measure(untabified.prefix(upTo: strNdx))
 
           let pad = String(repeating: " ",
-                           count: terminalWidth - 1)
+                           count: max(terminalWidth - 1, 0))
 
           let marker = options._theme.crashLocation("▲")
           let blankForNumber = String(repeating: " ", count: maxLineWidth)
@@ -725,13 +725,6 @@ public struct BacktraceFormatter {
       case let .returnAddress(address):
         pc = "\(hex(address))"
         attrs.append("ra")
-      case let .programCounterInAsync(address):
-        pc = "\(hex(address))"
-        attrs.append("ra")
-      case let .returnAddressInAsync(address):
-        pc = "\(hex(address))"
-        attrs.append("ra")
-        attrs.append("async")
       case let .asyncResumePoint(address):
         pc = "\(hex(address))"
         attrs.append("async")

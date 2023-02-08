@@ -63,16 +63,8 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
     /// A return address.
     ///
-    /// Corresponds to a call from a normal function.
+    /// Corresponds to a normal function call.
     case returnAddress(Address)
-
-    /// An accurate program counter in an async context.
-    case programCounterInAsync(Address)
-
-    /// A return address to an async context.
-    ///
-    /// Corresponds to a call from an async task.
-    case returnAddressInAsync(Address)
 
     /// An async resume point.
     ///
@@ -104,16 +96,26 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     /// Indicates a discontinuity of unknown length.
     case truncated
 
+    /// The program counter, without any adjustment.
+    public var originalProgramCounter: Address {
+      switch self {
+        case let .returnAddress(addr):
+          return addr
+        case let .programCounter(addr):
+          return addr
+        case let .asyncResumePoint(addr):
+          return addr
+        case .omittedFrames(_), .truncated:
+          return 0
+      }
+    }
+
     /// The adjusted program counter to use for symbolication.
     public var adjustedProgramCounter: Address {
       switch self {
         case let .returnAddress(addr):
           return addr - 1
-        case let .returnAddressInAsync(addr):
-          return addr - 1
         case let .programCounter(addr):
-          return addr
-        case let .programCounterInAsync(addr):
           return addr
         case let .asyncResumePoint(addr):
           return addr
@@ -129,10 +131,6 @@ public struct Backtrace: CustomStringConvertible, Sendable {
           return "\(hex(addr))"
         case let .returnAddress(addr):
           return "\(hex(addr)) [ra]"
-        case let .returnAddressInAsync(addr):
-          return "\(hex(addr)) [ra] [async]"
-        case let .programCounterInAsync(addr):
-          return "\(hex(addr)) [async]"
         case let .asyncResumePoint(addr):
           return "\(hex(addr)) [async]"
         case .omittedFrames(_), .truncated:
@@ -245,7 +243,8 @@ public struct Backtrace: CustomStringConvertible, Sendable {
                              offset: Int = 0,
                              top: Int = 16) throws -> Backtrace {
     switch algorithm {
-      // ###FIXME: .precise should be using DWARF EH
+      // All of them, for now, use the frame pointer unwinder.  In the long
+      // run, we should be using DWARF EH frame data for .precise.
       case .auto, .fast, .precise:
         let unwinder =
           FramePointerUnwinder(context: context, memoryReader: memoryReader)
