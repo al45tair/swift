@@ -222,6 +222,8 @@ handle_fatal_signal(int signum,
 
 char addr_buf[18];
 char timeout_buf[22];
+char limit_buf[22];
+char top_buf[22];
 const char *backtracer_argv[] = {
   "swift-backtrace",            // 0
   "--unwind",                   // 1
@@ -238,6 +240,18 @@ const char *backtracer_argv[] = {
   "friendly",                   // 12
   "--crashinfo",                // 13
   addr_buf,                     // 14
+  "--threads",                  // 15
+  "preset",                     // 16
+  "--registers",                // 17
+  "preset",                     // 18
+  "--images",                   // 19
+  "preset",                     // 20
+  "--limit",                    // 21
+  limit_buf,                    // 22
+  "--top",                      // 23
+  top_buf,                      // 24
+  "--sanitize",                 // 25
+  "preset",                     // 26
   NULL
 };
 
@@ -344,6 +358,48 @@ run_backtracer()
   backtracer_argv[6] = trueOrFalse(_swift_backtraceSettings.interactive);
   backtracer_argv[8] = trueOrFalse(_swift_backtraceSettings.color);
 
+  switch (_swift_backtraceSettings.threads) {
+  case ThreadsToShow::Preset:
+    backtracer_argv[16] = "preset";
+    break;
+  case ThreadsToShow::All:
+    backtracer_argv[16] = "all";
+    break;
+  case ThreadsToShow::Crashed:
+    backtracer_argv[16] = "crashed";
+    break;
+  }
+
+  switch (_swift_backtraceSettings.registers) {
+  case RegistersToShow::Preset:
+    backtracer_argv[18] = "preset";
+    break;
+  case RegistersToShow::None:
+    backtracer_argv[18] = "none";
+    break;
+  case RegistersToShow::All:
+    backtracer_argv[18] = "all";
+    break;
+  case RegistersToShow::Crashed:
+    backtracer_argv[18] = "crashed";
+    break;
+  }
+
+  switch (_swift_backtraceSettings.images) {
+  case ImagesToShow::Preset:
+    backtracer_argv[20] = "preset";
+    break;
+  case ImagesToShow::None:
+    backtracer_argv[20] = "none";
+    break;
+  case ImagesToShow::All:
+    backtracer_argv[20] = "all";
+    break;
+  case ImagesToShow::Mentioned:
+    backtracer_argv[20] = "mentioned";
+    break;
+  }
+
   switch (_swift_backtraceSettings.preset) {
   case Preset::Friendly:
     backtracer_argv[12] = "friendly";
@@ -356,7 +412,21 @@ run_backtracer()
     break;
   }
 
+  switch (_swift_backtraceSettings.sanitize) {
+  case SanitizePaths::Preset:
+    backtracer_argv[26] = "preset";
+    break;
+  case SanitizePaths::Off:
+    backtracer_argv[26] = "false";
+    break;
+  case SanitizePaths::On:
+    backtracer_argv[26] = "true";
+    break;
+  }
+
   format_unsigned(_swift_backtraceSettings.timeout, timeout_buf);
+  format_unsigned(_swift_backtraceSettings.limit, limit_buf);
+  format_unsigned(_swift_backtraceSettings.top, top_buf);
   format_address(&crashInfo, addr_buf);
 
   // Actually execute it

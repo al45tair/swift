@@ -55,10 +55,36 @@ enum class OnOffTty {
 };
 
 enum class Preset {
-  Auto = 0,
+  Auto = -1,
   Friendly = 0,
   Medium = 1,
   Full = 2
+};
+
+enum class ThreadsToShow {
+  Preset = -1,
+  All = 0,
+  Crashed = 1
+};
+
+enum class RegistersToShow {
+  Preset = -1,
+  None = 0,
+  All = 1,
+  Crashed = 2
+};
+
+enum class ImagesToShow {
+  Preset = -1,
+  None = 0,
+  All = 1,
+  Mentioned = 2
+};
+
+enum class SanitizePaths {
+  Preset = -1,
+  Off = 0,
+  On = 1
 };
 
 struct BacktraceSettings {
@@ -68,6 +94,12 @@ struct BacktraceSettings {
   OnOffTty         interactive;
   OnOffTty         color;
   unsigned         timeout;
+  ThreadsToShow    threads;
+  RegistersToShow  registers;
+  ImagesToShow     images;
+  unsigned         limit;
+  unsigned         top;
+  SanitizePaths    sanitize;
   Preset           preset;
   const char      *swiftBacktracePath;
 };

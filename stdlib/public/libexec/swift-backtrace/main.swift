@@ -63,6 +63,7 @@ internal struct SwiftBacktrace {
     var showImages: ImagesToShow? = nil
     var limit: Int? = 64
     var top = 16
+    var sanitize: Bool? = nil
   }
 
   static var args = Arguments()
@@ -124,6 +125,9 @@ Generate a backtrace for the parent process.
 -T <count>              Set the minimum number of frames to capture at the top
                         of the stack.  This is used with limit to ensure that
                         you capture sufficient frames to understand deep traces.
+
+--sanitize [<bool>]
+-z [<bool>]             Set whether or not to sanitize paths.
 
 --crashinfo <addr>
 -a <addr>               Provide a pointer to a platform specific CrashInfo
@@ -210,13 +214,17 @@ Generate a backtrace for the parent process.
         }
       case "-h", "--threads":
         if let v = value {
-          args.threads = parseBool(v)
+          if v.lowercased() != "preset" {
+            args.threads = parseBool(v)
+          }
         } else {
           args.threads = true
         }
       case "-r", "--registers":
         if let v = value {
           switch v.lowercased() {
+            case "preset":
+              break
             case "none":
               args.registers = RegistersToShow.none
             case "all":
@@ -236,6 +244,8 @@ Generate a backtrace for the parent process.
       case "-m", "--images":
         if let v = value {
           switch v.lowercased() {
+            case "preset":
+              break
             case "none":
               args.showImages = ImagesToShow.none
             case "all":
@@ -278,6 +288,12 @@ Generate a backtrace for the parent process.
           usage()
           exit(1)
         }
+      case "-z", "--sanitize":
+        if let v = value {
+          args.sanitize = parseBool(v)
+        } else {
+          args.sanitize = true
+        }
       case "-a", "--crashinfo":
         if let v = value {
           if let a = UInt64(v, radix: 16) {
@@ -316,7 +332,7 @@ Generate a backtrace for the parent process.
           .showAddresses(false)
           .showSourceCode(true)
           .showFrameAttributes(false)
-          .sanitizePaths(false)
+          .sanitizePaths(args.sanitize ?? false)
         if args.threads == nil {
           args.threads = false
         }
@@ -331,6 +347,7 @@ Generate a backtrace for the parent process.
           .skipRuntimeFailures(true)
           .showSourceCode(true)
           .showFrameAttributes(true)
+          .sanitizePaths(args.sanitize ?? true)
         if args.threads == nil {
           args.threads = false
         }
@@ -345,6 +362,7 @@ Generate a backtrace for the parent process.
           .skipRuntimeFailures(false)
           .skipThunkFunctions(false)
           .skipSystemFrames(false)
+          .sanitizePaths(args.sanitize ?? true)
         if args.threads == nil {
           args.threads = true
         }
@@ -378,6 +396,7 @@ Generate a backtrace for the parent process.
         switch UInt8(ch) {
           case UInt8(ascii: " "):
             interactWithUser()
+            exit(0)
           case UInt8(ascii: "D"), UInt8(ascii: "d"):
             startDebugger()
           default:
@@ -403,7 +422,7 @@ Generate a backtrace for the parent process.
         if let key = currentArg {
           handleArgument(key, value: arg)
           currentArg = nil
-        } else {
+        } else if arg != "" {
           print("swift-backtrace: unexpected argument '\(arg)'")
           usage()
           exit(1)

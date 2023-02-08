@@ -79,6 +79,24 @@ SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings = {
   // timeout
   30,
 
+  // threads
+  ThreadsToShow::Preset,
+
+  // registers
+  RegistersToShow::Preset,
+
+  // images
+  ImagesToShow::Preset,
+
+  // limit
+  64,
+
+  // top
+  16,
+
+  // sanitize,
+  SanitizePaths::Preset,
+
   // preset
   Preset::Auto,
 
@@ -430,7 +448,8 @@ _swift_processBacktracingSetting(llvm::StringRef key,
 
     if (value.equals_insensitive("none")) {
       _swift_backtraceSettings.timeout = 0;
-    } else if (valueCopy.consumeInteger(0, count)) {
+    } else if (!valueCopy.consumeInteger(0, count)) {
+      // Yes, consumeInteger() really does return *false* for success
       llvm::StringRef unit = valueCopy.trim();
 
       if (unit.empty()
@@ -467,6 +486,9 @@ _swift_processBacktracingSetting(llvm::StringRef key,
                      "unknown unwind algorithm '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
+  } else if (key.equals_insensitive("sanitize")) {
+    _swift_backtraceSettings.sanitize
+      = parseBoolean(value) ? SanitizePaths::On : SanitizePaths::Off;
   } else if (key.equals_insensitive("preset")) {
     if (value.equals_insensitive("auto"))
       _swift_backtraceSettings.preset = Preset::Auto;
@@ -479,6 +501,60 @@ _swift_processBacktracingSetting(llvm::StringRef key,
     else {
       swift::warning(0,
                      "unknown backtracing preset '%.*s'\n",
+                     static_cast<int>(value.size()), value.data());
+    }
+  } else if (key.equals_insensitive("threads")) {
+    if (value.equals_insensitive("all"))
+      _swift_backtraceSettings.threads = ThreadsToShow::All;
+    else if (value.equals_insensitive("crashed"))
+      _swift_backtraceSettings.threads = ThreadsToShow::Crashed;
+    else {
+      swift::warning(0,
+                     "unknown threads setting '%.*s'\n",
+                     static_cast<int>(value.size()), value.data());
+    }
+  } else if (key.equals_insensitive("registers")) {
+    if (value.equals_insensitive("none"))
+      _swift_backtraceSettings.registers = RegistersToShow::None;
+    else if (value.equals_insensitive("all"))
+      _swift_backtraceSettings.registers = RegistersToShow::All;
+    else if (value.equals_insensitive("crashed"))
+      _swift_backtraceSettings.registers = RegistersToShow::Crashed;
+    else {
+      swift::warning(0,
+                     "unknown registers setting '%.*s'\n",
+                     static_cast<int>(value.size()), value.data());
+    }
+  } else if (key.equals_insensitive("images")) {
+    if (value.equals_insensitive("none"))
+      _swift_backtraceSettings.images = ImagesToShow::None;
+    else if (value.equals_insensitive("all"))
+      _swift_backtraceSettings.images = ImagesToShow::All;
+    else if (value.equals_insensitive("mentioned"))
+      _swift_backtraceSettings.images = ImagesToShow::Mentioned;
+    else {
+      swift::warning(0,
+                     "unknown registers setting '%.*s'\n",
+                     static_cast<int>(value.size()), value.data());
+    }
+  } else if (key.equals_insensitive("limit")) {
+    int limit;
+    // Yes, getAsInteger() returns false for success.
+    if (!value.getAsInteger(0, limit) && limit >= 0) {
+      _swift_backtraceSettings.limit = limit;
+    } else {
+      swift::warning(0,
+                     "bad backtrace limit '%.*s'\n",
+                     static_cast<int>(value.size()), value.data());
+    }
+  } else if (key.equals_insensitive("top")) {
+    int top;
+    // (If you think the next line is wrong, see above.)
+    if (!value.getAsInteger(0, top) && top >= 0) {
+      _swift_backtraceSettings.top = top;
+    } else {
+       swift::warning(0,
+                     "bad backtrace top count '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("swift-backtrace")) {

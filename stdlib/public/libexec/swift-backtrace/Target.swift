@@ -292,7 +292,7 @@ class Target {
 
   public func withDebugger(_ body: () -> ()) throws {
     #if os(macOS)
-    return try withTemporaryDirectory(pattern: "backtrace.XXXXXXXX") {
+    return try withTemporaryDirectory(pattern: "/tmp/backtrace.XXXXXXXX") {
       tmpdir in
 
       let cmdfile = "\(tmpdir)/lldb.command"
@@ -302,6 +302,8 @@ class Target {
       if fputs("""
                  #!/bin/bash
                  clear
+                 echo "Once LLDB has attached, return to the other window and press any key"
+                 echo ""
                  xcrun lldb --attach-pid \(pid) -o c
                  """, fp) == EOF {
         throw PosixError(errno: errno)
