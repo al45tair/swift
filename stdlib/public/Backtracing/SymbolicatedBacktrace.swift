@@ -18,7 +18,10 @@
 import Swift
 
 @_implementationOnly import _SwiftBacktracingShims
+
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
 @_implementationOnly import CoreFoundation
+#endif
 
 @_silgen_name("_swift_isThunkFunction")
 func _swift_isThunkFunction(

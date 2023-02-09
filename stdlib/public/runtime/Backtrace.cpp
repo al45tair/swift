@@ -57,7 +57,7 @@ SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings = {
   // enabled
 #if TARGET_OS_OSX
   OnOffTty::TTY,
-#elif defined(__linux__) || defined(_WIN32)
+#elif 0 // defined(__linux__) || defined(_WIN32)
   OnOffTty::On,
 #else
   OnOffTty::Off,
@@ -67,7 +67,7 @@ SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings = {
   true,
 
   // interactive
-#if TARGET_OS_OSX || defined(__linux__) || defined(_WIN32)
+#if TARGET_OS_OSX // || defined(__linux__) || defined(_WIN32)
   OnOffTty::TTY,
 #else
   OnOffTty::Off,
@@ -154,10 +154,6 @@ char swiftBacktracePath[SWIFT_BACKTRACE_BUFFER_SIZE] __attribute__((section(SWIF
 char swiftBacktraceEnv[SWIFT_BACKTRACE_ENVIRONMENT_SIZE] __attribute__((section(SWIFT_BACKTRACE_SECTION), aligned(SWIFT_PAGE_SIZE)));
 #endif
 
-#endif // SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
-
-void _swift_processBacktracingSetting(llvm::StringRef key, llvm::StringRef value);
-void _swift_parseBacktracingSettings(const char *);
 void _swift_backtraceSetupEnvironment();
 
 bool isStdoutATty()
@@ -179,6 +175,11 @@ bool isStdinATty()
   return GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &dwMode);
 #endif
 }
+
+#endif // SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
+
+void _swift_processBacktracingSetting(llvm::StringRef key, llvm::StringRef value);
+void _swift_parseBacktracingSettings(const char *);
 
 #if DEBUG_BACKTRACING_SETTINGS
 const char *algorithmToString(UnwindAlgorithm algorithm) {
@@ -233,7 +234,7 @@ BacktraceInitializer::BacktraceInitializer() {
 #endif
 
 #if !SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
-  if (_swift_backtraceSettings.enabled) {
+  if (_swift_backtraceSettings.enabled != OnOffTty::Off) {
     swift::warning(0,
                    "swift runtime: backtrace-on-crash is not supported on "
                    "this platform.\n");
@@ -623,6 +624,7 @@ _swift_parseBacktracingSettings(const char *settings)
   }
 }
 
+#if SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
 // These are the only environment variables that are passed through to
 // the swift-backtrace process.  They're copied at program start, and then
 // write protected so they can't be manipulated by an attacker using a buffer
@@ -678,6 +680,8 @@ _swift_backtraceSetupEnvironment()
 
   *penv = 0;
 }
+
+#endif // SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
 
 } // namespace
 

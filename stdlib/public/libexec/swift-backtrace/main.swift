@@ -10,6 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if os(macOS)
+
 #if canImport(Darwin)
 import Darwin.C
 #elseif canImport(Glibc)
@@ -1094,3 +1096,14 @@ Generate a backtrace for the parent process.
     showGPR(name: "pc", context: context, register: .r15)
   }
 }
+
+#else
+
+@main
+internal struct SwiftBacktrace {
+  static public func main() {
+    print("swift-backtrace: not supported on this platform.")
+  }
+}
+
+#endif // os(macOS)

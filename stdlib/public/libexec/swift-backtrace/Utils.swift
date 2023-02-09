@@ -67,9 +67,13 @@ internal func recursiveRemoveContents(_ dir: String) throws {
     closedir(dirp)
   }
   while let dp = readdir(dirp) {
-    let len = Int(dp.pointee.d_namlen)
     let name: String =
       withUnsafePointer(to: &dp.pointee.d_name) {
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+        let len = Int(dp.pointee.d_namlen)
+#else
+        let len = Int(strlen($0))
+#endif
         return $0.withMemoryRebound(to: UInt8.self,
                                     capacity: len) {
           return String(decoding: UnsafeBufferPointer(start: $0,
@@ -105,7 +109,7 @@ internal func withTemporaryDirectory(pattern: String, shouldDelete: Bool = true,
   buf.append(0)
 
   guard let dir = buf.withUnsafeMutableBufferPointer({
-    if let ptr = mkdtemp($0.baseAddress) {
+    if let ptr = mkdtemp($0.baseAddress!) {
       return String(cString: ptr)
     }
     return nil
@@ -126,7 +130,7 @@ internal func spawn(_ path: String, args: [String]) throws {
   var cargs = args.map{ strdup($0) }
   cargs.append(nil)
   let result = cargs.withUnsafeBufferPointer{
-    posix_spawn(nil, path, nil, nil, $0.baseAddress, nil)
+    posix_spawn(nil, path, nil, nil, $0.baseAddress!, nil)
   }
   for arg in cargs {
     free(arg)
