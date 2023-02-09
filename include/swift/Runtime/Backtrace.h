@@ -90,7 +90,7 @@ enum class SanitizePaths {
 struct BacktraceSettings {
   UnwindAlgorithm  algorithm;
   OnOffTty         enabled;
-  bool             symbolicate;
+  bool             demangle;
   OnOffTty         interactive;
   OnOffTty         color;
   unsigned         timeout;

@@ -42,6 +42,8 @@
 
 #include "swift/Runtime/Backtrace.h"
 
+#include <cstring>
+
 #ifndef lengthof
 #define lengthof(x)     (sizeof(x) / sizeof(x[0]))
 #endif
@@ -228,7 +230,7 @@ const char *backtracer_argv[] = {
   "swift-backtrace",            // 0
   "--unwind",                   // 1
   "precise",                    // 2
-  "--symbolicate",              // 3
+  "--demangle",                 // 3
   "true",                       // 4
   "--interactive",              // 5
   "true",                       // 6
@@ -354,7 +356,7 @@ run_backtracer()
 
   // (The TTY option has already been handled at this point, so these are
   //  all either "On" or "Off".)
-  backtracer_argv[4] = trueOrFalse(_swift_backtraceSettings.symbolicate);
+  backtracer_argv[4] = trueOrFalse(_swift_backtraceSettings.demangle);
   backtracer_argv[6] = trueOrFalse(_swift_backtraceSettings.interactive);
   backtracer_argv[8] = trueOrFalse(_swift_backtraceSettings.color);
 
@@ -425,7 +427,12 @@ run_backtracer()
   }
 
   format_unsigned(_swift_backtraceSettings.timeout, timeout_buf);
-  format_unsigned(_swift_backtraceSettings.limit, limit_buf);
+
+  if (_swift_backtraceSettings.limit < 0)
+    std::strcpy(limit_buf, "none");
+  else
+    format_unsigned(_swift_backtraceSettings.limit, limit_buf);
+
   format_unsigned(_swift_backtraceSettings.top, top_buf);
   format_address(&crashInfo, addr_buf);
 

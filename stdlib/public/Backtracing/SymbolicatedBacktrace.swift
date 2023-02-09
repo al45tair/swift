@@ -153,7 +153,7 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
          location.line == 0 && location.column == 0 {
         return true
       }
-      if rawName.hasSuffix("$mainyyFZ") {
+      if rawName.hasSuffix("5$mainyyFZ") {
         return true
       }
       #endif

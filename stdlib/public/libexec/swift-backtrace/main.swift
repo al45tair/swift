@@ -52,7 +52,7 @@ internal struct SwiftBacktrace {
 
   struct Arguments {
     var unwindAlgorithm: UnwindAlgorithm = .precise
-    var symbolicate = false
+    var demangle = false
     var interactive = false
     var color = false
     var timeout = 30
@@ -82,7 +82,7 @@ internal struct SwiftBacktrace {
 
   static func usage() {
     print("""
-usage: swift-backtrace [--unwind <algorithm>] [--symbolicate [<bool>]] [--interactive [<bool>]] [--color [<bool>]] [--timeout <seconds>] [--preset <preset>] [--threads [<bool>]] [--registers <registers>] [--images <images>] --crashinfo <addr>
+usage: swift-backtrace [--unwind <algorithm>] [--demangle [<bool>]] [--interactive [<bool>]] [--color [<bool>]] [--timeout <seconds>] [--preset <preset>] [--threads [<bool>]] [--registers <registers>] [--images <images>] --crashinfo <addr>
 
 Generate a backtrace for the parent process.
 
@@ -90,8 +90,8 @@ Generate a backtrace for the parent process.
 -u <algorithm>          Set the unwind algorithm to use.  Supported algorithms
                         are "fast" and "precise".
 
---symbolicate [<bool>]
--s [<bool>]             Set whether or not to symbolicate.
+--demangle [<bool>]
+-d [<bool>]             Set whether or not to demangle identifiers.
 
 --interactive [<bool>]
 -i [<bool>]             Set whether to be interactive.
@@ -127,7 +127,7 @@ Generate a backtrace for the parent process.
                         you capture sufficient frames to understand deep traces.
 
 --sanitize [<bool>]
--z [<bool>]             Set whether or not to sanitize paths.
+-s [<bool>]             Set whether or not to sanitize paths.
 
 --crashinfo <addr>
 -a <addr>               Provide a pointer to a platform specific CrashInfo
@@ -163,11 +163,11 @@ Generate a backtrace for the parent process.
           usage()
           exit(1)
         }
-      case "-s", "--symbolicate":
+      case "-d", "--demangle":
         if let v = value {
-          args.symbolicate = parseBool(v)
+          args.demangle = parseBool(v)
         } else {
-          args.symbolicate = true
+          args.demangle = true
         }
       case "-i", "--interactive":
         if let v = value {
@@ -288,7 +288,7 @@ Generate a backtrace for the parent process.
           usage()
           exit(1)
         }
-      case "-z", "--sanitize":
+      case "-s", "--sanitize":
         if let v = value {
           args.sanitize = parseBool(v)
         } else {
@@ -373,6 +373,7 @@ Generate a backtrace for the parent process.
           args.showImages = .mentioned
         }
     }
+    formattingOptions = formattingOptions.demangle(args.demangle)
 
     // We never use the showImages option; if we're going to show images, we
     // want to do it *once* for all the backtraces we showed.

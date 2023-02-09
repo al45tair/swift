@@ -63,7 +63,7 @@ SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings = {
   OnOffTty::Off,
 #endif
 
-  // symbolicate
+  // demangle
   true,
 
   // interactive
@@ -214,7 +214,7 @@ const char *presetToString(Preset preset) {
 } // namespace
 
 BacktraceInitializer::BacktraceInitializer() {
-  const char *backtracing = swift::runtime::environment::SWIFT_BACKTRACING();
+  const char *backtracing = swift::runtime::environment::SWIFT_BACKTRACE();
 
   if (backtracing)
     _swift_parseBacktracingSettings(backtracing);
@@ -235,7 +235,8 @@ BacktraceInitializer::BacktraceInitializer() {
 #if !SWIFT_BACKTRACE_ON_CRASH_SUPPORTED
   if (_swift_backtraceSettings.enabled) {
     swift::warning(0,
-                   "backtrace-on-crash is not supported on this platform.\n");
+                   "swift runtime: backtrace-on-crash is not supported on "
+                   "this platform.\n");
     _swift_backtraceSettings.enabled = OnOffTty::Off;
   }
 #else
@@ -266,7 +267,7 @@ BacktraceInitializer::BacktraceInitializer() {
 
     if (!_swift_backtraceSettings.swiftBacktracePath) {
       swift::warning(0,
-                     "unable to locate swift-backtrace; "
+                     "swift runtime: unable to locate swift-backtrace; "
                      "disabling backtracing.\n");
       _swift_backtraceSettings.enabled = OnOffTty::Off;
     }
@@ -289,8 +290,8 @@ BacktraceInitializer::BacktraceInitializer() {
                                     SWIFT_BACKTRACE_BUFFER_SIZE);
     if (!len) {
       swift::warning(0,
-                     "unable to convert path to swift-backtrace: %08lx; "
-                     "disabling backtracing.\n",
+                     "swift runtime: unable to convert path to "
+                     "swift-backtrace: %08lx; disabling backtracing.\n",
                      ::GetLastError());
       _swift_backtraceSettings.enabled = OnOffTty::Off;
     } else if (!VirtualProtect(swiftBacktracePath,
@@ -298,8 +299,8 @@ BacktraceInitializer::BacktraceInitializer() {
                                PAGE_READONLY,
                                NULL)) {
       swift::warning(0,
-                     "unable to protect path to swift-backtrace: %08lx; "
-                     "disabling backtracing.\n",
+                     "swift runtime: unable to protect path to "
+                     "swift-backtrace: %08lx; disabling backtracing.\n",
                      ::GetLastError());
       _swift_backtraceSettings.enabled = OnOffTty::Off;
     }
@@ -311,8 +312,8 @@ BacktraceInitializer::BacktraceInitializer() {
                         PAGE_READONLY,
                         NULL)) {
       swift::warning(0,
-                     "unable to protect environment for swift-backtrace: %08lx; "
-                     "disabling backtracing.\n",
+                     "swift runtime: unable to protect environment "
+                     "for swift-backtrace: %08lx; disabling backtracing.\n",
                      ::GetLastError());
       _swift_backtraceSettings.enabled = OnOffTty::Off;
     }
@@ -323,7 +324,7 @@ BacktraceInitializer::BacktraceInitializer() {
     size_t len = strlen(_swift_backtraceSettings.swiftBacktracePath);
     if (len > SWIFT_BACKTRACE_BUFFER_SIZE - 1) {
       swift::warning(0,
-                     "path to swift-backtrace is too long; "
+                     "swift runtime: path to swift-backtrace is too long; "
                      "disabling backtracing.\n");
       _swift_backtraceSettings.enabled = OnOffTty::Off;
     } else {
@@ -335,8 +336,8 @@ BacktraceInitializer::BacktraceInitializer() {
                    sizeof(swiftBacktracePath),
                    PROT_READ) < 0) {
         swift::warning(0,
-                       "unable to protect path to swift-backtrace at %p: %d; "
-                       "disabling backtracing.\n",
+                       "swift runtime: unable to protect path to "
+                       "swift-backtrace at %p: %d; disabling backtracing.\n",
                        swiftBacktracePath,
                        errno);
         _swift_backtraceSettings.enabled = OnOffTty::Off;
@@ -349,8 +350,8 @@ BacktraceInitializer::BacktraceInitializer() {
                  sizeof(swiftBacktraceEnv),
                  PROT_READ) < 0) {
         swift::warning(0,
-                       "unable to protect environment for swift-backtrace "
-                       "at %p: %d; disabling backtracing.\n",
+                       "swift runtime: unable to protect environment for "
+                       "swift-backtrace at %p: %d; disabling backtracing.\n",
                        swiftBacktraceEnv,
                        errno);
         _swift_backtraceSettings.enabled = OnOffTty::Off;
@@ -362,7 +363,7 @@ BacktraceInitializer::BacktraceInitializer() {
     ErrorCode err = _swift_installCrashHandler();
     if (err != 0) {
       swift::warning(0,
-                     "crash handler installation failed; "
+                     "swift runtime: crash handler installation failed; "
                      "disabling backtracing.\n");
     }
   }
@@ -373,7 +374,7 @@ BacktraceInitializer::BacktraceInitializer() {
          "\n"
          "algorithm: %s\n"
          "enabled: %s\n"
-         "symbolicate: %s\n"
+         "demangle: %s\n"
          "interactive: %s\n"
          "color: %s\n"
          "timeout: %u\n"
@@ -381,7 +382,7 @@ BacktraceInitializer::BacktraceInitializer() {
          "swiftBacktracePath: %s\n",
          algorithmToString(_swift_backtraceSettings.algorithm),
          onOffTtyToString(_swift_backtraceSettings.enabled),
-         boolToString(_swift_backtraceSettings.symbolicate),
+         boolToString(_swift_backtraceSettings.demangle),
          onOffTtyToString(_swift_backtraceSettings.interactive),
          onOffTtyToString(_swift_backtraceSettings.color),
          _swift_backtraceSettings.timeout,
@@ -436,8 +437,8 @@ _swift_processBacktracingSetting(llvm::StringRef key,
 {
   if (key.equals_insensitive("enable")) {
     _swift_backtraceSettings.enabled = parseOnOffTty(value);
-  } else if (key.equals_insensitive("symbolicate")) {
-    _swift_backtraceSettings.symbolicate = parseBoolean(value);
+  } else if (key.equals_insensitive("demangle")) {
+    _swift_backtraceSettings.demangle = parseBoolean(value);
   } else if (key.equals_insensitive("interactive")) {
     _swift_backtraceSettings.interactive = parseOnOffTty(value);
   } else if (key.equals_insensitive("color")) {
@@ -465,13 +466,13 @@ _swift_processBacktracingSetting(llvm::StringRef key,
 
       if (_swift_backtraceSettings.timeout < 0) {
         swift::warning(0,
-                       "bad backtracing timeout %ds\n",
+                       "swift runtime: bad backtracing timeout %ds\n",
                        _swift_backtraceSettings.timeout);
         _swift_backtraceSettings.timeout = 0;
       }
     } else {
       swift::warning(0,
-                     "bad backtracing timeout '%.*s'\n",
+                     "swift runtime: bad backtracing timeout '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("unwind")) {
@@ -483,7 +484,7 @@ _swift_processBacktracingSetting(llvm::StringRef key,
       _swift_backtraceSettings.algorithm = UnwindAlgorithm::Precise;
     else {
       swift::warning(0,
-                     "unknown unwind algorithm '%.*s'\n",
+                     "swift runtime: unknown unwind algorithm '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("sanitize")) {
@@ -500,7 +501,7 @@ _swift_processBacktracingSetting(llvm::StringRef key,
       _swift_backtraceSettings.preset = Preset::Full;
     else {
       swift::warning(0,
-                     "unknown backtracing preset '%.*s'\n",
+                     "swift runtime: unknown backtracing preset '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("threads")) {
@@ -510,7 +511,7 @@ _swift_processBacktracingSetting(llvm::StringRef key,
       _swift_backtraceSettings.threads = ThreadsToShow::Crashed;
     else {
       swift::warning(0,
-                     "unknown threads setting '%.*s'\n",
+                     "swift runtime: unknown threads setting '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("registers")) {
@@ -522,7 +523,7 @@ _swift_processBacktracingSetting(llvm::StringRef key,
       _swift_backtraceSettings.registers = RegistersToShow::Crashed;
     else {
       swift::warning(0,
-                     "unknown registers setting '%.*s'\n",
+                     "swift runtime: unknown registers setting '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("images")) {
@@ -534,27 +535,29 @@ _swift_processBacktracingSetting(llvm::StringRef key,
       _swift_backtraceSettings.images = ImagesToShow::Mentioned;
     else {
       swift::warning(0,
-                     "unknown registers setting '%.*s'\n",
+                     "swift runtime: unknown registers setting '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("limit")) {
     int limit;
     // Yes, getAsInteger() returns false for success.
-    if (!value.getAsInteger(0, limit) && limit >= 0) {
+    if (value.equals_insensitive("none"))
+      _swift_backtraceSettings.limit = -1;
+    else if (!value.getAsInteger(0, limit) && limit > 0)
       _swift_backtraceSettings.limit = limit;
-    } else {
+    else {
       swift::warning(0,
-                     "bad backtrace limit '%.*s'\n",
+                     "swift runtime: bad backtrace limit '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("top")) {
     int top;
     // (If you think the next line is wrong, see above.)
-    if (!value.getAsInteger(0, top) && top >= 0) {
+    if (!value.getAsInteger(0, top) && top >= 0)
       _swift_backtraceSettings.top = top;
-    } else {
+    else {
        swift::warning(0,
-                     "bad backtrace top count '%.*s'\n",
+                     "swift runtime: bad backtrace top count '%.*s'\n",
                      static_cast<int>(value.size()), value.data());
     }
   } else if (key.equals_insensitive("swift-backtrace")) {
@@ -567,7 +570,7 @@ _swift_processBacktracingSetting(llvm::StringRef key,
     _swift_backtraceSettings.swiftBacktracePath = path;
   } else {
     swift::warning(0,
-                   "unknown backtracing setting '%.*s'\n",
+                   "swift runtime: unknown backtracing setting '%.*s'\n",
                    static_cast<int>(key.size()), key.data());
   }
 }
@@ -645,9 +648,11 @@ _swift_backtraceSetupEnvironment()
   std::memset(swiftBacktraceEnv, 0, sizeof(swiftBacktraceEnv));
 
   // We definitely don't want this on in the swift-backtrace program
-  std::memcpy(penv, "SWIFT_BACKTRACING=enable=no", 28);
-  penv += 28;
-  remaining -= 28;
+  const char * const disable = "SWIFT_BACKTRACE=enable=no";
+  const size_t disableLen = std::strlen(disable);
+  std::memcpy(penv, disable, disableLen);
+  penv += disableLen;
+  remaining -= disableLen;
 
   for (unsigned n = 0; n < BACKTRACE_MAX_ENV_VARS; ++n) {
     const char *name = environmentVarsToPassThrough[n];
