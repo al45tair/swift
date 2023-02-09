@@ -1,9 +1,9 @@
 // RUN: %empty-directory(%t)
 // RUN: %target-build-swift %s -parse-as-library -Onone -g -o %t/StackOverflow
 // RUN: %target-codesign %t/StackOverflow
-// RUN: (env SWIFT_BACKTRACING=enable=yes %target-run %t/StackOverflow || true) | %FileCheck %s
-// RUN: (env SWIFT_BACKTRACING=limit=16,top=4,enable=yes %target-run %t/StackOverflow || true) | %FileCheck %s --check-prefix LIMITED
-// RUN: (env SWIFT_BACKTRACING=preset=friendly,enable=yes %target-run %t/StackOverflow || true) | %FileCheck %s --check-prefix FRIENDLY
+// RUN: (env SWIFT_BACKTRACE=enable=yes %target-run %t/StackOverflow || true) | %FileCheck %s
+// RUN: (env SWIFT_BACKTRACE=limit=16,top=4,enable=yes %target-run %t/StackOverflow || true) | %FileCheck %s --check-prefix LIMITED
+// RUN: (env SWIFT_BACKTRACE=preset=friendly,enable=yes %target-run %t/StackOverflow || true) | %FileCheck %s --check-prefix FRIENDLY
 
 // REQUIRES: executable_test
 // REQUIRES: OS=macosx

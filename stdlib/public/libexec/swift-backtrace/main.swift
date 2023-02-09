@@ -12,7 +12,6 @@
 
 #if canImport(Darwin)
 import Darwin.C
-import Darwin.Mach
 #elseif canImport(Glibc)
 import Glibc
 #elseif canImport(MSVCRT)

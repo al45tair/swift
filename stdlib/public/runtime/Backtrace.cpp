@@ -649,7 +649,7 @@ _swift_backtraceSetupEnvironment()
 
   // We definitely don't want this on in the swift-backtrace program
   const char * const disable = "SWIFT_BACKTRACE=enable=no";
-  const size_t disableLen = std::strlen(disable);
+  const size_t disableLen = std::strlen(disable) + 1;
   std::memcpy(penv, disable, disableLen);
   penv += disableLen;
   remaining -= disableLen;
