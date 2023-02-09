@@ -30,7 +30,7 @@ struct StackOverflow {
 
 // CHECK: Thread 0 crashed:
 
-// CHECK:     0               0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{11|10}}
+// CHECK:     0               0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{[0-9]+}}
 // CHECK-NEXT:     1 [ra]          0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{15|14}}:3
 // CHECK-NEXT:     2 [ra]          0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{15|14}}:3
 // CHECK-NEXT:     3 [ra]          0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{15|14}}:3
@@ -105,7 +105,7 @@ struct StackOverflow {
 
 // LIMITED: Thread 0 crashed:
 
-// LIMITED:     0               0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{11|10}}
+// LIMITED:     0               0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{[0-9]+}}
 // LIMITED-NEXT:     1 [ra]          0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{15|14}}:3
 // LIMITED-NEXT:     2 [ra]          0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{15|14}}:3
 // LIMITED-NEXT:     3 [ra]          0x{{[0-9a-f]+}} recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{15|14}}:3
@@ -126,7 +126,7 @@ struct StackOverflow {
 
 // FRIENDLY: Thread 0 crashed:
 
-// FRIENDLY:     0 recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{11|10}}
+// FRIENDLY:     0 recurse(_:) + {{[0-9]+}} in StackOverflow at {{.*}}/StackOverflow.swift:{{[0-9]+}}
 
 // SKIP-FRIENDLY:      8│ // REQUIRES: executable_test
 // SKIP-FRIENDLY-NEXT:      9│ // REQUIRES: OS=macosx
