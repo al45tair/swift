@@ -2947,9 +2947,11 @@ function(add_swift_target_executable name)
     # Add the lipo target to the top-level convenience targets
     if(SWIFTEXE_TARGET_BUILD_WITH_STDLIB)
       foreach(arch ${SWIFT_SDK_${sdk}_ARCHITECTURES})
-        set(variant "-${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
-        if(TARGET "swift-stdlib${variant}")
+        set(variant "-${SWIFT_SDK_${sdk}_LIB_SUBDIR}-${arch}")
+        if(TARGET "swift-stdlib${VARIANT_SUFFIX}" AND
+           TARGET "swift-test-stdlib${VARIANT_SUFFIX}")
           add_dependencies("swift-stdlib${variant}" ${lipo_target})
+          add_dependencies("swift-test-stdlib${variant}" ${lipo_target})
         endif()
       endforeach()
     endif()
