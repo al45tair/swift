@@ -22,18 +22,28 @@
 
 #ifdef __cplusplus
 namespace swift {
-extern "C" {
 #endif
 
 struct CrashInfo {
   __swift_uint64_t crashing_thread;
   __swift_uint64_t signal;
   __swift_uint64_t fault_address;
+#ifdef __APPLE__
   __swift_uint64_t mctx;
+#elif defined(__linux__)
+  __swift_uint64_t thread_list;
+#endif // !__linux__
 };
 
+#ifdef __linux__
+struct ThreadInfo {
+  __swift_uint64_t next;
+  __swift_int64_t  tid;
+  __swift_uint64_t uctx;
+};
+#endif // __linux__
+
 #ifdef __cplusplus
-} // extern "C"
 } // namespace swift
 #endif
 

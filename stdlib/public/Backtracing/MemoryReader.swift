@@ -112,4 +112,31 @@ extension MemoryReader {
     return try reader.fetch(from: address, into: buffer)
   }
 }
+
+#elseif os(Linux)
+@_spi(MemoryReaders) public struct RemoteMemoryReaderFailed: Error {
+  var error: CInt
+}
+
+@_spi(MemoryReaders) public struct RemoteMemoryReader: MemoryReader {
+  public typealias Address = UInt64
+
+  @_silgen_name("_swift_fetchRemoteMemory")
+  private func fetchRemoteMemory(
+    from addr: UInt64,
+    to: UnsafeRawPointer,
+    byteCount: UInt64
+  ) -> CInt
+
+  public func fetch<T>(from address: Address,
+                       into buffer: UnsafeMutableBufferPointer<T>) throws {
+    let size = UInt64(MemoryLayout<T>.stride * buffer.count)
+    let result = fetchRemoteMemory(from: UInt64(address),
+                                   to: buffer.baseAddress!,
+                                   byteCount: size)
+    if result != 0 {
+      throw RemoteMemoryReaderFailed(error: result)
+    }
+  }
+}
 #endif

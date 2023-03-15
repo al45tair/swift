@@ -16,7 +16,7 @@
 
 import Swift
 
-#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(Linux)
 
 @_implementationOnly import _SwiftBacktracingShims
 

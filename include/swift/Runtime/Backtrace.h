@@ -50,7 +50,12 @@ typedef int ErrorCode;
 
 SWIFT_RUNTIME_STDLIB_INTERNAL ErrorCode _swift_installCrashHandler();
 
-SWIFT_RUNTIME_STDLIB_INTERNAL bool _swift_spawnBacktracer(const ArgChar * const *argv);
+SWIFT_RUNTIME_STDLIB_INTERNAL bool _swift_spawnBacktracer(
+  const ArgChar * const *argv,
+#ifdef __linux__
+  int memserver_fd
+#endif
+);
 
 enum class UnwindAlgorithm {
   Auto = 0,
@@ -118,6 +123,10 @@ struct BacktraceSettings {
 SWIFT_RUNTIME_STDLIB_INTERNAL BacktraceSettings _swift_backtraceSettings;
 
 SWIFT_RUNTIME_STDLIB_SPI SWIFT_CC(swift) bool _swift_isThunkFunction(const char *mangledName);
+
+#ifdef __linux__
+SWIFT_RUNTIME_STDLIB_SPI SWIFT_CC(swift) int _swift_fetchRemoteMemory(uint64_t from, void *to, uint64_t byteCount);
+#endif
 
 #ifdef __cplusplus
 } // namespace backtrace
