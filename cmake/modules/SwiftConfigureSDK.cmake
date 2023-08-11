@@ -15,6 +15,8 @@ function(_report_sdk prefix)
   message(STATUS "  Swift Standard Library Path: ${SWIFT_SDK_${prefix}_LIB_SUBDIR}")
   message(STATUS "  Threading Package: ${SWIFT_SDK_${prefix}_THREADING_PACKAGE}")
 
+  message(STATUS "  Static link only: ${SWIFT_SDK_${prefix}_STATIC_ONLY}")
+
   if("${prefix}" STREQUAL "WINDOWS")
     message(STATUS "  UCRT Version: ${UCRTVersion}")
     message(STATUS "  UCRT SDK Path: ${UniversalCRTSdkDir}")
@@ -158,6 +160,8 @@ endfunction()
 #   SWIFT_SDK_${prefix}_USE_ISYSROOT            Whether to use -isysroot
 #   SWIFT_SDK_${prefix}_SHARED_LIBRARY_PREFIX   Shared library prefix for this SDK (e.g. 'lib')
 #   SWIFT_SDK_${prefix}_SHARED_LIBRARY_SUFFIX   Shared library suffix for this SDK (e.g. 'dylib')
+#   SWIFT_SDK_${prefix}_STATIC_ONLY             Whether to build *only* static libraries
+
 #   SWIFT_SDK_${prefix}_ARCHITECTURES           Architectures (as a list)
 #   SWIFT_SDK_${prefix}_IS_SIMULATOR            Whether this is a simulator target.
 #   SWIFT_SDK_${prefix}_ARCH_${ARCH}_TRIPLE     Triple name
@@ -206,6 +210,7 @@ macro(configure_sdk_darwin
   set(SWIFT_SDK_${prefix}_STATIC_LIBRARY_SUFFIX ".a")
   set(SWIFT_SDK_${prefix}_IMPORT_LIBRARY_PREFIX "")
   set(SWIFT_SDK_${prefix}_IMPORT_LIBRARY_SUFFIX "")
+  set(SWIFT_SDK_${prefix}_STATIC_ONLY FALSE)
   get_threading_package(${prefix} "darwin" SWIFT_SDK_${prefix}_THREADING_PACKAGE)
 
   set(SWIFT_SDK_${prefix}_ARCHITECTURES ${architectures})
@@ -310,6 +315,13 @@ macro(configure_sdk_unix name architectures)
   endif()
   set(SWIFT_SDK_${prefix}_USE_ISYSROOT FALSE)
 
+  # On Musl, build static only
+  if("${prefix}" STREQUAL "MUSL")
+    set(SWIFT_SDK_${prefix}_STATIC_ONLY TRUE)
+  else()
+    set(SWIFT_SDK_${prefix}_STATIC_ONLY FALSE)
+  endif()
+
   # GCC on Linux is usually located under `/usr`.
   # However, Ubuntu 20.04 ships with another GCC installation under `/`, which
   # does not include libstdc++. Swift build scripts pass `--sysroot=/` to
@@ -326,7 +338,7 @@ macro(configure_sdk_unix name architectures)
     CACHE STRING "Extra flags for compiling the C++ overlay")
 
   set(_default_threading_package "pthreads")
-  if("${prefix}" STREQUAL "LINUX")
+  if("${prefix}" STREQUAL "LINUX" OR "${prefix}" STREQUAL "MUSL")
     set(_default_threading_package "linux")
   elseif("${prefix}" STREQUAL "WASI")
     set(_default_threading_package "none")
@@ -419,6 +431,9 @@ macro(configure_sdk_unix name architectures)
         endif()
         set(SWIFT_SDK_WASI_ARCH_wasm32_PATH "${SWIFT_WASI_SYSROOT_PATH}")
         set(SWIFT_SDK_WASI_ARCH_wasm32_TRIPLE "wasm32-unknown-wasi")
+      elseif("${prefix}" STREQUAL "MUSL")
+        set(SWIFT_SDK_MUSL_ARCH_${arch}_TRIPLE "${arch}-unknown-linux-musl")
+        set(SWIFT_SDK_MUSL_ARCH_${arch}_PATH "${SWIFT_MUSL_PATH}/${arch}")
       else()
         message(FATAL_ERROR "unknown Unix OS: ${prefix}")
       endif()
@@ -456,6 +471,7 @@ macro(configure_sdk_windows name environment architectures)
   set(SWIFT_SDK_${prefix}_STATIC_LIBRARY_SUFFIX ".lib")
   set(SWIFT_SDK_${prefix}_IMPORT_LIBRARY_PREFIX "")
   set(SWIFT_SDK_${prefix}_IMPORT_LIBRARY_SUFFIX ".lib")
+  set(SWIFT_SDK_${prefix}_STATIC_ONLY FALSE)
   get_threading_package(${prefix} "win32" SWIFT_SDK_${prefix}_THREADING_PACKAGE)
 
   foreach(arch ${architectures})

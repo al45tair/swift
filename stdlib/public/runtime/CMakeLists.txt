@@ -111,14 +111,14 @@ set(swift_runtime_library_compile_flags ${swift_runtime_compile_flags})
 list(APPEND swift_runtime_library_compile_flags -DswiftCore_EXPORTS)
 list(APPEND swift_runtime_library_compile_flags -I${SWIFT_SOURCE_DIR}/stdlib/include/llvm/Support -I${SWIFT_SOURCE_DIR}/include)
 
-if(SWIFT_BUILD_STATIC_STDLIB)
-  set(static_binary_lnk_file_list)
+set(static_binary_lnk_file_list)
 
-  foreach(sdk ${SWIFT_SDKS})
-    if(NOT "${sdk}" STREQUAL "LINUX" AND NOT "${sdk}" STREQUAL "WASI")
-      continue()
-    endif()
+foreach(sdk ${SWIFT_SDKS})
+  if(NOT "${sdk}" STREQUAL "LINUX" AND NOT "${sdk}" STREQUAL "WASI")
+    continue()
+  endif()
 
+  if(SWIFT_BUILD_STATIC_STDLIB OR SWIFT_SDK_${sdk}_STATIC_ONLY)
     string(TOLOWER "${sdk}" lowercase_sdk)
     set(static_binary_lnk_src "${SWIFT_SOURCE_DIR}/stdlib/public/Resources/${lowercase_sdk}/static-executable-args.lnk")
 
@@ -126,23 +126,23 @@ if(SWIFT_BUILD_STATIC_STDLIB)
     set(linkfile "${lowercase_sdk}/static-executable-args.lnk")
     add_custom_command_target(swift_static_binary_${sdk}_args
       COMMAND
-        "${CMAKE_COMMAND}" -E copy
-        "${static_binary_lnk_src}"
-        "${SWIFTSTATICLIB_DIR}/${linkfile}"
+      "${CMAKE_COMMAND}" -E copy
+      "${static_binary_lnk_src}"
+      "${SWIFTSTATICLIB_DIR}/${linkfile}"
       OUTPUT
-        "${SWIFTSTATICLIB_DIR}/${linkfile}"
+      "${SWIFTSTATICLIB_DIR}/${linkfile}"
       DEPENDS
-        "${static_binary_lnk_src}")
+      "${static_binary_lnk_src}")
 
     list(APPEND static_binary_lnk_file_list ${swift_static_binary_${sdk}_args})
     swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${linkfile}"
-                               DESTINATION "lib/swift_static/${lowercase_sdk}"
-                               COMPONENT stdlib)
-  endforeach()
-  if(static_binary_lnk_file_list)
-    add_dependencies(stdlib ${static_binary_lnk_file_list})
-    add_custom_target(static_binary_magic ALL DEPENDS ${static_binary_lnk_file_list})
+      DESTINATION "lib/swift_static/${lowercase_sdk}"
+      COMPONENT stdlib)
   endif()
+endforeach()
+if(static_binary_lnk_file_list)
+  add_dependencies(stdlib ${static_binary_lnk_file_list})
+  add_custom_target(static_binary_magic ALL DEPENDS ${static_binary_lnk_file_list})
 endif()
 
 add_swift_target_library(swiftRuntime OBJECT_LIBRARY
@@ -245,7 +245,7 @@ foreach(sdk ${SWIFT_SDKS})
                                   "${static_runtime_registrar}"
                                 DEPENDS
                                   "${swiftrtObject}")
-      if(SWIFT_BUILD_DYNAMIC_STDLIB)
+      if(SWIFT_BUILD_DYNAMIC_STDLIB AND NOT SWIFT_SDK_${sdk}_STATIC_ONLY)
         swift_install_in_component(FILES
                                      "${shared_runtime_registrar}"
                                    DESTINATION
@@ -253,7 +253,7 @@ foreach(sdk ${SWIFT_SDKS})
                                    COMPONENT
                                      stdlib)
       endif()
-      if(SWIFT_BUILD_STATIC_STDLIB)
+      if(SWIFT_BUILD_STATIC_STDLIB OR SWIFT_SDK_${sdk}_STATIC_ONLY)
         swift_install_in_component(FILES
                                      "${static_runtime_registrar}"
                                    DESTINATION

@@ -238,6 +238,8 @@ class HostSpecificConfiguration(object):
         platforms_to_skip_build = set()
         if not stage_dependent_args.build_linux:
             platforms_to_skip_build.add(StdlibDeploymentTarget.Linux)
+        if not stage_dependent_args.build_musl:
+            platforms_to_skip_build.add(StdlibDeploymentTarget.Musl)
         if not stage_dependent_args.build_freebsd:
             platforms_to_skip_build.add(StdlibDeploymentTarget.FreeBSD)
         if not stage_dependent_args.build_cygwin:
@@ -268,6 +270,8 @@ class HostSpecificConfiguration(object):
         platforms_to_skip_test = set()
         if not stage_dependent_args.test_linux:
             platforms_to_skip_test.add(StdlibDeploymentTarget.Linux)
+        if not stage_dependent_args.test_musl:
+            platforms_to_skip_test.add(StdlibDeploymentTarget.Musl)
         if not stage_dependent_args.test_freebsd:
             platforms_to_skip_test.add(StdlibDeploymentTarget.FreeBSD)
         if not stage_dependent_args.test_cygwin:

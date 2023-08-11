@@ -460,6 +460,14 @@ set(SWIFT_DARWIN_MODULE_ARCHS "" CACHE STRING
 targets on Darwin platforms. These targets are in addition to the full \
 library targets.")
 
+#
+# User-configurable Linux specific options.
+#
+
+set(SWIFT_MUSL_PATH "/usr/local/musl" CACHE STRING
+  "Path to the directory that contains the Musl headers and libraries. \
+This is only required if we have been asked to build the Musl SDK, and \
+defaults to the default install location for Musl.")
 
 #
 # User-configurable Android specific options.
@@ -1001,8 +1009,23 @@ if("${SWIFT_HOST_VARIANT_SDK}" STREQUAL "LINUX")
   is_sdk_requested(LINUX swift_build_linux)
   if(swift_build_linux)
     configure_sdk_unix("Linux" "${SWIFT_HOST_VARIANT_ARCH}")
-    set(SWIFT_PRIMARY_VARIANT_SDK_default  "${SWIFT_HOST_VARIANT_SDK}")
-    set(SWIFT_PRIMARY_VARIANT_ARCH_default "${SWIFT_HOST_VARIANT_ARCH}")
+  endif()
+
+  # Should we build it for Musl?
+  is_sdk_requested(MUSL swift_build_musl)
+  if(swift_build_musl)
+    ###TODO: Need to add the include/lib directories to the search paths
+    ###      in each case (from AddSwiftStdlib.cmake) etc.
+
+    if("${SWIFT_MUSL_PATH}" STREQUAL "")
+      message(FATAL_ERROR "You must set SWIFT_MUSL_PATH to point to the Musl libraries and headers.  Specifically, we expect to find Musl at <SWIFT_MUSL_PATH>/<arch> for each requested architecture.")
+    endif()
+
+    if("${SWIFT_SDK_MUSL_ARCHITECTURES}" STREQUAL "")
+      set(SWIFT_SDK_MUSL_ARCHITECTURES "${SWIFT_HOST_VARIANT_ARCH}")
+    endif()
+
+    configure_sdk_unix("Musl" "${SWIFT_SDK_MUSL_ARCHITECTURES}")
   endif()
 
   is_sdk_requested(FREESTANDING swift_build_freestanding)
@@ -1010,6 +1033,10 @@ if("${SWIFT_HOST_VARIANT_SDK}" STREQUAL "LINUX")
     # TODO
     # configure_sdk_unix("FREESTANDING" "${SWIFT_HOST_VARIANT_ARCH}")
   endif()
+
+  # Default is Linux SDK for host
+  set(SWIFT_PRIMARY_VARIANT_SDK_default  "${SWIFT_HOST_VARIANT_SDK}")
+  set(SWIFT_PRIMARY_VARIANT_ARCH_default "${SWIFT_HOST_VARIANT_ARCH}")
 
 elseif("${SWIFT_HOST_VARIANT_SDK}" STREQUAL "FREEBSD")
 
