@@ -218,17 +218,47 @@ foreach(sdk ${SWIFT_SDKS})
     set(musl_header_out_static "${module_dir_static}/${musl_header}")
 
     add_custom_command_target(
-      copy_musl_modulemap_static
+      copy_musl_modulemap
       COMMAND
-        "${CMAKE_COMMAND}" "-E" "make_directory" ${module_dir_static}
+        "${CMAKE_COMMAND}" "-E" "make_directory" ${module_dir}
       COMMAND
-        "${CMAKE_COMMAND}" "-E" "copy" ${CMAKE_CURRENT_LIST_DIR}/${musl_modulemap} ${musl_modulemap_out_static}
+        "${CMAKE_COMMAND}" "-E" "copy"
+          ${CMAKE_CURRENT_LIST_DIR}/${musl_modulemap}
+          ${musl_modulemap_out}
       COMMAND
-        "${CMAKE_COMMAND}" "-E" "copy" ${CMAKE_CURRENT_LIST_DIR}/${musl_header} ${musl_header_out_static}
-      OUTPUT ${musl_modulemap_out_static} ${musl_header_out_static}
-      COMMENT "Copying Musl modulemap to static resources")
+        "${CMAKE_COMMAND}" "-E" "copy"
+          ${CMAKE_CURRENT_LIST_DIR}/${musl_header}
+          ${musl_header_out}
+      OUTPUT ${musl_modulemap_out} ${musl_header_out}
+      COMMENT "Copying Musl modulemap to resources")
 
     list(APPEND musl_modulemap_target_list ${copy_musl_modulemap})
+
+    if(SWIFT_BUILD_STATIC_STDLIB OR SWIFT_SDK_${sdk}_STATIC_ONLY)
+      add_custom_command_target(
+        copy_musl_modulemap_static
+        COMMAND
+          "${CMAKE_COMMAND}" "-E" "make_directory" ${module_dir_static}
+        COMMAND
+          "${CMAKE_COMMAND}" "-E" "copy"
+            ${CMAKE_CURRENT_LIST_DIR}/${musl_modulemap}
+            ${musl_modulemap_out_static}
+        COMMAND
+          "${CMAKE_COMMAND}" "-E" "copy"
+            ${CMAKE_CURRENT_LIST_DIR}/${musl_header}
+            ${musl_header_out_static}
+        OUTPUT ${musl_modulemap_out_static} ${musl_header_out_static}
+        COMMENT "Copying Musl modulemap to static resources")
+
+      list(APPEND musl_modulemap_target_list ${copy_musl_modulemap_static})
+
+      swift_install_in_component(FILES "${musl_modulemap_out_static}"
+                                 DESTINATION "lib/swift_static/${arch_subdir}"
+                                 COMPONENT sdk-overlay)
+      swift_install_in_component(FILES "${musl_header_out_static}"
+                                 DESTINATION "lib/swift_static/${arch_subdir}"
+                                 COMPONENT sdk-overlay)
+    endif()
 
     swift_install_in_component(FILES "${musl_modulemap_out}"
                                DESTINATION "lib/swift/${arch_subdir}"

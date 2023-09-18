@@ -344,7 +344,13 @@ class LLVM(cmake_product.CMakeProduct):
             host_machine_target))
 
         # Install config files for musl
-        musl_cfg = os.path.join(host_build_dir, 'bin', f'{arch}-unknown-linux-musl-clang.cfg')
+        bin_dir = os.path.join(host_build_dir, 'bin')
+        try:
+            os.makedirs(bin_dir)
+        except FileExistsError:
+            pass
+
+        musl_cfg = os.path.join(bin_dir, f'{arch}-unknown-linux-musl-clang.cfg')
         with open(musl_cfg, "wt") as f:
             f.write(f"""
 -target {arch}-unknown-linux-musl

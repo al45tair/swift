@@ -2410,7 +2410,7 @@ function(add_swift_target_library name)
 
     if(NOT SWIFTLIB_OBJECT_LIBRARY)
       # Determine the name of the universal library.
-      if(SWIFTLIB_SHARED)
+      if(SWIFTLIB_SHARED AND NOT SWIFT_SDK_${sdk}_STATIC_ONLY)
         if("${sdk}" STREQUAL "WINDOWS")
           set(UNIVERSAL_LIBRARY_NAME
             "${SWIFTLIB_DIR}/${library_subdir}/${name}.dll")
@@ -2422,12 +2422,18 @@ function(add_swift_target_library name)
             "${SWIFTLIB_DIR}/${library_subdir}/${CMAKE_SHARED_LIBRARY_PREFIX}${name}${CMAKE_SHARED_LIBRARY_SUFFIX}")
         endif()
       else()
+        if(SWIFTLIB_INSTALL_WITH_SHARED)
+          set(lib_dir "${SWIFTLIB_DIR}")
+        else()
+          set(lib_dir "${SWIFTSTATICLIB_DIR}")
+        endif()
+
         if("${sdk}" STREQUAL "WINDOWS")
           set(UNIVERSAL_LIBRARY_NAME
-            "${SWIFTLIB_DIR}/${library_subdir}/${name}.lib")
+            "${lib_dir}/${library_subdir}/${name}.lib")
         else()
           set(UNIVERSAL_LIBRARY_NAME
-            "${SWIFTLIB_DIR}/${library_subdir}/${CMAKE_STATIC_LIBRARY_PREFIX}${name}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+            "${lib_dir}/${library_subdir}/${CMAKE_STATIC_LIBRARY_PREFIX}${name}${CMAKE_STATIC_LIBRARY_SUFFIX}")
         endif()
       endif()
 
@@ -2459,7 +2465,8 @@ function(add_swift_target_library name)
 
       precondition(resource_dir_sdk_subdir)
 
-      if(SWIFTLIB_SHARED OR SWIFTLIB_INSTALL_WITH_SHARED)
+      if((SWIFTLIB_SHARED AND NOT SWIFT_SDK_${sdk}_STATIC_ONLY)
+          OR SWIFTLIB_INSTALL_WITH_SHARED)
         set(resource_dir "swift")
         set(file_permissions
             OWNER_READ OWNER_WRITE OWNER_EXECUTE

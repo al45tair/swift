@@ -114,7 +114,7 @@ list(APPEND swift_runtime_library_compile_flags -I${SWIFT_SOURCE_DIR}/stdlib/inc
 set(static_binary_lnk_file_list)
 
 foreach(sdk ${SWIFT_SDKS})
-  if(NOT "${sdk}" STREQUAL "LINUX" AND NOT "${sdk}" STREQUAL "WASI")
+  if(NOT SWIFT_SDK_${sdk}_STATIC_LINKING_SUPPORTED)
     continue()
   endif()
 
