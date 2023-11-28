@@ -15,14 +15,18 @@ module _musl [system] {
 
   textual header "features.h"
 
-  header "bits/musldefs.h"
-
   // Type declarations live in bits
-  module types {
-    umbrella "bits/types"
-      module * {
-      export *
+  module bits {
+    module musldefs {
+      header "bits/musldefs.h"
     }
+    module types {
+      umbrella "bits/types"
+      module * {
+        export *
+      }
+    }
+    export *
   }
 }
 
@@ -217,8 +221,6 @@ module posix_dirent [system] {
 module posix_dlfcn [system] {
   header "dlfcn.h"
   export *
-
-  link "dl"
 }
 module posix_fcntl [system] {
   header "fcntl.h"
@@ -272,13 +274,6 @@ module net_if [system] {
 }
 
 // Non-POSIX
-module fts [system] {
-  header "fts.h"
-  export *
-
-  link "fts"
-}
-
 module net_ethernet [system] {
   header "net/ethernet.h"
   // Include <netinet/if_ether.h> here because these two headers circularly
@@ -364,8 +359,6 @@ module posix_poll [system] {
 module posix_pthread [system] {
   header "pthread.h"
   export *
-
-  link "pthread"
 }
 module posix_pwd [system] {
   header "pwd.h"
@@ -750,8 +743,6 @@ module linux_pty [system] {
 module linux_resolv [system] {
   header "resolv.h"
   export *
-
-  link "resolv"
 }
 module linux_scsi [system] {
   header "scsi/scsi.h"
