@@ -222,20 +222,26 @@ static SmallVector<std::pair<std::string, std::string>, 2> getLibcFileMapping(
 
   // TODO: remove the SwiftGlibc.h header and reference all Glibc headers
   // directly from the modulemap.
-  Path actualHeaderPath = actualModuleMapPath;
-  llvm::sys::path::remove_filename(actualHeaderPath);
-  llvm::sys::path::append(actualHeaderPath, umbrellaHeaderFileName);
-
   Path injectedModuleMapPath(libcDir);
   llvm::sys::path::append(injectedModuleMapPath, "module.modulemap");
 
-  Path injectedHeaderPath(libcDir);
-  llvm::sys::path::append(injectedHeaderPath, umbrellaHeaderFileName);
+  if (umbrellaHeaderFileName.empty()) {
+    return {
+      {std::string(injectedModuleMapPath), std::string(actualModuleMapPath)},
+    };
+  } else {
+    Path actualHeaderPath = actualModuleMapPath;
+    llvm::sys::path::remove_filename(actualHeaderPath);
+    llvm::sys::path::append(actualHeaderPath, umbrellaHeaderFileName);
 
-  return {
+    Path injectedHeaderPath(libcDir);
+    llvm::sys::path::append(injectedHeaderPath, umbrellaHeaderFileName);
+
+    return {
       {std::string(injectedModuleMapPath), std::string(actualModuleMapPath)},
       {std::string(injectedHeaderPath), std::string(actualHeaderPath)},
-  };
+    };
+  }
 }
 
 static void getLibStdCxxFileMapping(

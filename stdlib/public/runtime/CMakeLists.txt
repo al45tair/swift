@@ -137,10 +137,6 @@ foreach(sdk ${SWIFT_SDKS})
       COMPONENT stdlib)
   endif()
 endforeach()
-if(static_binary_lnk_file_list)
-  add_dependencies(stdlib ${static_binary_lnk_file_list})
-  add_custom_target(static_binary_magic ALL DEPENDS ${static_binary_lnk_file_list})
-endif()
 
 add_swift_target_library(swiftRuntime OBJECT_LIBRARY
   ${swift_runtime_sources}
@@ -264,18 +260,31 @@ foreach(sdk ${SWIFT_SDKS})
     # 'GenericUnix' (eg linux)
     if(SWIFT_SDK_${sdk}_OBJECT_FORMAT STREQUAL "ELF")
       string(TOLOWER "${sdk}" lowercase_sdk)
-      set(libpthread -lpthread)
-      set(concurrency_libs)
-      set(android_libraries)
-      if(sdk STREQUAL "ANDROID")
-        set(android_libraries -llog)
-        set(libpthread)
-      elseif(SWIFT_CONCURRENCY_USES_DISPATCH)
-        set(concurrency_libs "-ldispatch -lBlocksRuntime")
-      endif()
-
+      set(static_stdlib_lnk_src "${SWIFT_SOURCE_DIR}/stdlib/public/Resources/${lowercase_sdk}/static-stdlib-args.lnk")
       set(linkfile ${lowercase_sdk}/static-stdlib-args.lnk)
-      file(WRITE "${SWIFTSTATICLIB_DIR}/${linkfile}" "
+      if(EXISTS "${static_stdlib_lnk_src}")
+        add_custom_command_target(swift_static_stdlib_${sdk}_args
+          COMMAND
+          "${CMAKE_COMMAND}" -E copy
+          "${static_stdlib_lnk_src}"
+          "${SWIFTSTATICLIB_DIR}/${linkfile}"
+          OUTPUT
+          "${SWIFTSTATICLIB_DIR}/${linkfile}"
+          DEPENDS
+          "${static_stdlib_lnk_src}")
+        list(APPEND static_binary_lnk_file_list ${swift_static_stdlib_${sdk}_args})
+      else()
+        set(libpthread -lpthread)
+        set(concurrency_libs)
+        set(android_libraries)
+        if(sdk STREQUAL "ANDROID")
+          set(android_libraries -llog)
+          set(libpthread)
+        elseif(SWIFT_CONCURRENCY_USES_DISPATCH)
+          set(concurrency_libs "-ldispatch -lBlocksRuntime")
+        endif()
+
+        file(WRITE "${SWIFTSTATICLIB_DIR}/${linkfile}" "
 -ldl
 ${libpthread}
 ${android_libraries}
@@ -286,6 +295,7 @@ ${concurrency_libs}
 -Xlinker -export-dynamic
 -Xlinker --exclude-libs
 -Xlinker ALL")
+      endif()
 
       swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${linkfile}"
                                  DESTINATION "lib/swift_static/${lowercase_sdk}"
@@ -293,3 +303,9 @@ ${concurrency_libs}
     endif()
   endforeach()
 endforeach()
+
+if(static_binary_lnk_file_list)
+  add_dependencies(stdlib ${static_binary_lnk_file_list})
+  add_custom_target(static_binary_magic ALL DEPENDS ${static_binary_lnk_file_list})
+endif()
+

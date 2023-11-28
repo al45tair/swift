@@ -185,6 +185,7 @@ void CompilerInvocation::setDefaultBlocklistsIfNecessary() {
 }
 
 static void updateRuntimeLibraryPaths(SearchPathOptions &SearchPathOpts,
+                                      const FrontendOptions &FrontendOpts,
                                       llvm::Triple &Triple) {
   llvm::SmallString<128> LibPath(SearchPathOpts.RuntimeResourcePath);
 
@@ -216,15 +217,18 @@ static void updateRuntimeLibraryPaths(SearchPathOptions &SearchPathOpts,
   }
 
   if (!SearchPathOpts.getSDKPath().empty()) {
+    const char *swiftDir = FrontendOpts.UseSharedResourceFolder
+      ? "swift" : "swift_static";
+
     if (tripleIsMacCatalystEnvironment(Triple)) {
       LibPath = SearchPathOpts.getSDKPath();
       llvm::sys::path::append(LibPath, "System", "iOSSupport");
-      llvm::sys::path::append(LibPath, "usr", "lib", "swift");
+      llvm::sys::path::append(LibPath, "usr", "lib", swiftDir);
       RuntimeLibraryImportPaths.push_back(std::string(LibPath.str()));
     }
 
     LibPath = SearchPathOpts.getSDKPath();
-    llvm::sys::path::append(LibPath, "usr", "lib", "swift");
+    llvm::sys::path::append(LibPath, "usr", "lib", swiftDir);
     if (!Triple.isOSDarwin()) {
       // Use the non-architecture suffixed form with directory-layout
       // swiftmodules.
@@ -294,7 +298,7 @@ setBridgingHeaderFromFrontendOptions(ClangImporterOptions &ImporterOpts,
 
 void CompilerInvocation::setRuntimeResourcePath(StringRef Path) {
   SearchPathOpts.RuntimeResourcePath = Path.str();
-  updateRuntimeLibraryPaths(SearchPathOpts, LangOpts.Target);
+  updateRuntimeLibraryPaths(SearchPathOpts, FrontendOpts, LangOpts.Target);
 }
 
 void CompilerInvocation::setTargetTriple(StringRef Triple) {
@@ -303,12 +307,12 @@ void CompilerInvocation::setTargetTriple(StringRef Triple) {
 
 void CompilerInvocation::setTargetTriple(const llvm::Triple &Triple) {
   LangOpts.setTarget(Triple);
-  updateRuntimeLibraryPaths(SearchPathOpts, LangOpts.Target);
+  updateRuntimeLibraryPaths(SearchPathOpts, FrontendOpts, LangOpts.Target);
 }
 
 void CompilerInvocation::setSDKPath(const std::string &Path) {
   SearchPathOpts.setSDKPath(Path);
-  updateRuntimeLibraryPaths(SearchPathOpts, LangOpts.Target);
+  updateRuntimeLibraryPaths(SearchPathOpts, FrontendOpts, LangOpts.Target);
 }
 
 bool CompilerInvocation::setModuleAliasMap(std::vector<std::string> args,
@@ -3060,7 +3064,7 @@ bool CompilerInvocation::parseArgs(
     return true;
   }
 
-  updateRuntimeLibraryPaths(SearchPathOpts, LangOpts.Target);
+  updateRuntimeLibraryPaths(SearchPathOpts, FrontendOpts, LangOpts.Target);
   setDefaultPrebuiltCacheIfNecessary();
   setDefaultBlocklistsIfNecessary();
 
