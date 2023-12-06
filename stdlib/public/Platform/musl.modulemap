@@ -11,9 +11,9 @@
 //===----------------------------------------------------------------------===//
 
 module _musl [system] {
-  config_macros NDEBUG, _GNU_SOURCE, _BSD_SOURCE, _XOPEN_SOURCE
+  config_macros _GNU_SOURCE, _BSD_SOURCE, _XOPEN_SOURCE, _POSIX_SOURCE, _POSIX_C_SOURCE, _LARGEFILE64_SOURCE, _ALL_SOURCE, _DEFAULT_SOURCE, __STRICT_ANSI__
 
-  textual header "features.h"
+  header "features.h"
 
   header "bits/musldefs.h"
 
@@ -43,6 +43,7 @@ module stdc_iso646 [system] {
 }
 
 module stdc_limits [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "limits.h"
   export *
 }
@@ -78,6 +79,7 @@ module stdc_stdint [system] {
 }
 
 module stdc_time [system] {
+  config_macros _POSIX_SOURCE, _POSIX_C_SOURCE, _XOPEN_SOURCE, _GNU_SOURCE, _BSD_SOURCE
   header "time.h"
   export *
 }
@@ -93,11 +95,13 @@ module stdc_complex [system] {
 }
 
 module stdc_ctype [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "ctype.h"
   export *
 }
 
 module stdc_errno [system] {
+  config_macros _GNU_SOURCE
   header "errno.h"
   export *
 }
@@ -113,31 +117,37 @@ module stdc_inttypes [system] {
 }
 
 module stdc_locale [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "locale.h"
   export *
 }
 
 module stdc_math [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _XOPEN_SOURCE
   header "math.h"
   export *
 }
 
 module stdc_setjmp [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "setjmp.h"
   export *
 }
 
 module stdc_signal [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "signal.h"
   export *
 }
 
 module stdc_stdio [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _LARGEFILE64_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "stdio.h"
   export *
 }
 
 module stdc_stdlib [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _LARGEFILE64_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "stdlib.h"
   export *
 }
@@ -148,6 +158,7 @@ module stdc_stdnoreturn [system] {
 }
 
 module stdc_string [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "string.h"
   export *
 }
@@ -163,17 +174,20 @@ module stdc_uchar [system] {
 }
 
 module stdc_wchar [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "wchar.h"
   export *
 }
 
 module stdc_wctype [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "wctype.h"
   export *
 }
 
 // POSIX
 module posix_aio [system] {
+  config_macros _LARGEFILE64_SOURCE
   header "aio.h"
   export *
 }
@@ -211,16 +225,19 @@ module posix_cpio [system] {
   export *
 }
 module posix_dirent [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _LARGEFILE64_SOURCE, _XOPEN_SOURCE
   header "dirent.h"
   export *
 }
 module posix_dlfcn [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "dlfcn.h"
   export *
 
   link "dl"
 }
 module posix_fcntl [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "fcntl.h"
   export *
 }
@@ -233,14 +250,17 @@ module posix_fnmatch [system] {
   export *
 }
 module posix_ftw [system] {
+  config_macros _LARGEFILE64_SOURCE
   header "ftw.h"
   export *
 }
 module posix_glob [system] {
+  config_macros _LARGEFILE64_SOURCE
   header "glob.h"
   export *
 }
 module posix_grp [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _XOPEN_SOURCE
   header "grp.h"
   export *
 }
@@ -249,6 +269,7 @@ module posix_iconv [system] {
   export *
 }
 module posix_langinfo [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "langinfo.h"
   export *
 }
@@ -267,6 +288,7 @@ module posix_mqueue [system] {
 
 // POSIX
 module net_if [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "net/if.h"
   export *
 }
@@ -297,16 +319,19 @@ module net_route [system] {
 
 // POSIX
 module posix_netdb [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "netdb.h"
   export *
 }
 
 // POSIX
 module netinet_in [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "netinet/in.h"
   export *
 }
 module netinet_tcp [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "netinet/tcp.h"
   export *
 }
@@ -348,6 +373,7 @@ module netinet_ip_icmp [system] {
   export *
 }
 module netinet_udp [system] {
+  config_macros _GNU_SOURCE
   header "netinet/udp.h"
   export *
 }
@@ -358,16 +384,19 @@ module posix_nl_types [system] {
   export *
 }
 module posix_poll [system] {
+  config_macros _GNU_SOURCE
   header "poll.h"
   export *
 }
 module posix_pthread [system] {
+  config_macros _GNU_SOURCE
   header "pthread.h"
   export *
 
   link "pthread"
 }
 module posix_pwd [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _XOPEN_SOURCE
   header "pwd.h"
   export *
 }
@@ -376,10 +405,12 @@ module posix_regex [system] {
   export *
 }
 module posix_sched [system] {
+  config_macros _GNU_SOURCE
   header "sched.h"
   export *
 }
 module posix_search [system] {
+  config_macros _GNU_SOURCE
   header "search.h"
   export *
 }
@@ -388,10 +419,12 @@ module posix_semaphore [system] {
   export *
 }
 module posix_spawn [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "spawn.h"
   export *
 }
 module posix_strings [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "strings.h"
   export *
 }
@@ -402,46 +435,57 @@ module posix_stropts [system] {
 
 // POSIX
 module sys_ipc [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "sys/ipc.h"
   export *
 }
 module sys_mman [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _LARGEFILE64_SOURCE
   header "sys/mman.h"
   export *
 }
 module sys_msg [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "sys/msg.h"
   export *
 }
 module sys_resource [system] {
+  config_macros _GNU_SOURCE, _LARGEFILE64_SOURCE
   header "sys/resource.h"
   export *
 }
 module sys_select [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "sys/select.h"
   export *
 }
 module sys_sem [system] {
+  config_macros _GNU_SOURCE
   header "sys/sem.h"
   export *
 }
 module sys_shm [system] {
+  config_macros _GNU_SOURCE
   header "sys/shm.h"
   export *
 }
 module sys_socket [system] {
+  config_macros _GNU_SOURCE
   header "sys/socket.h"
   export *
 }
 module sys_stat [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _LARGEFILE64_SOURCE, _XOPEN_SOURCE
   header "sys/stat.h"
   export *
 }
 module sys_statvfs [system] {
+  config_macros _LARGEFILE64_SOURCE
   header "sys/statvfs.h"
   export *
 }
 module sys_time [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "sys/time.h"
   export *
 }
@@ -450,22 +494,27 @@ module sys_times [system] {
   export *
 }
 module sys_types [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _LARGEFILE64_SOURCE
   header "sys/types.h"
   export *
 }
 module sys_uio [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _LARGEFILE64_SOURCE
   header "sys/uio.h"
   export *
 }
 module sys_un [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "sys/un.h"
   export *
 }
 module sys_utsname [system] {
+  config_macros _GNU_SOURCE
   header "sys/utsname.h"
   export *
 }
 module sys_wait [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _POSIX_C_SOURCE, _POSIX_SOURCE, _XOPEN_SOURCE
   header "sys/wait.h"
   export *
 }
@@ -572,6 +621,7 @@ module sys_reg [system] {
   export *
 }
 module sys_sendfile [system] {
+  config_macros _LARGEFILE64_SOURCE
   header "sys/sendfile.h"
   export *
 }
@@ -580,6 +630,7 @@ module sys_signalfd [system] {
   export *
 }
 module sys_statfs [system] {
+  config_macros _LARGEFILE64_SOURCE
   header "sys/statfs.h"
   export *
 }
@@ -600,6 +651,7 @@ module sys_sysinfo [system] {
   export *
 }
 module sys_syslog [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "sys/syslog.h"
   export *
 }
@@ -624,6 +676,7 @@ module sys_ttydefaults [system] {
   export *
 }
 module sys_ucontext [system] {
+  config_macros _GNU_SOURCE, _BSD_SOURCE
   header "sys/ucontext.h"
   export *
 }
@@ -650,14 +703,17 @@ module posix_tar [system] {
   export *
 }
 module posix_termios [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "termios.h"
   export *
 }
 module posix_ucontext [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "ucontext.h"
   export *
 }
 module posix_unistd [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE, _LARGEFILE64_SOURCE, _XOPEN_SOURCE
   header "unistd.h"
   export *
 }
@@ -670,6 +726,7 @@ module posix_utime [system] {
   export *
 }
 module posix_utmpx [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "utmpx.h"
   export *
 }
@@ -696,6 +753,7 @@ module linux_elf [system] {
   export *
 }
 module linux_endian [system] {
+  config_macros _BSD_SOURCE, _GNU_SOURCE
   header "endian.h"
   export *
 }
