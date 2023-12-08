@@ -275,7 +275,8 @@ toolchains::GenericUnix::constructInvocation(const DynamicLinkJobAction &job,
   }
 
   SmallString<128> SharedResourceDirPath;
-  getResourceDirPath(SharedResourceDirPath, context.Args, /*Shared=*/true);
+  getResourceDirPath(SharedResourceDirPath, context.Args,
+                     /*Shared=*/!(staticExecutable || staticStdlib));
 
   SmallString<128> swiftrtPath = SharedResourceDirPath;
   llvm::sys::path::append(swiftrtPath,

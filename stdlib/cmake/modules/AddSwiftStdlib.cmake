@@ -115,6 +115,12 @@ function(_add_target_variant_c_compile_link_flags)
     list(APPEND result "--sysroot=${_sysroot}")
   endif()
 
+  if("${CFLAGS_SDK}" STREQUAL "MUSL")
+    list(APPEND result "-isystem" "${SWIFT_MUSL_PATH}/${CFLAGS_ARCH}/usr/include/c++/v1")
+    list(APPEND result "-DSWIFT_LIBC_IS_MUSL")
+  endif()
+
+
   if("${CFLAGS_SDK}" STREQUAL "ANDROID")
     # Make sure the Android NDK lld is used.
     swift_android_tools_path(${CFLAGS_ARCH} tools_path)
@@ -488,6 +494,8 @@ function(_add_target_variant_link_flags)
     if("${LFLAGS_ARCH}" MATCHES "armv5|armv6|armv7|i686")
       list(APPEND link_libraries "atomic")
     endif()
+  elseif("${LFLAGS_SDK}" STREQUAL "MUSL")
+    list(APPEND link_libraries "pthread" "dl")
   elseif("${LFLAGS_SDK}" STREQUAL "FREEBSD")
     list(APPEND link_libraries "pthread")
   elseif("${LFLAGS_SDK}" STREQUAL "OPENBSD")
@@ -1269,10 +1277,14 @@ function(add_swift_target_library_single target name)
   endif()
 
   if(target_static)
-    _list_add_string_suffix(
-        "${SWIFTLIB_SINGLE_LINK_LIBRARIES}"
-        "-static"
-        target_static_depends)
+    set(target_static_depends)
+    foreach(dep ${SWIFTLIB_SINGLE_LINK_LIBRARIES})
+      if (NOT "${dep}" MATCHES "^(icucore|dispatch|BlocksRuntime)($|-.*)$")
+        list(APPEND target_static_depends "${dep}-static")
+      endif()
+    endforeach()
+
+
     # FIXME: should this be target_link_libraries?
     add_dependencies_multiple_targets(
         TARGETS "${target_static}"
@@ -1415,6 +1427,7 @@ function(add_swift_target_library_single target name)
         "SHELL:-Xclang --dependent-lib=msvcrt$<$<CONFIG:Debug>:d>")
     endif()
   endif()
+
   target_compile_options(${target} PRIVATE
     ${c_compile_flags})
   target_link_options(${target} PRIVATE
@@ -1772,6 +1785,7 @@ function(add_swift_target_library name)
         SWIFT_MODULE_DEPENDS_HAIKU
         SWIFT_MODULE_DEPENDS_IOS
         SWIFT_MODULE_DEPENDS_LINUX
+        SWIFT_MODULE_DEPENDS_MUSL
         SWIFT_MODULE_DEPENDS_OSX
         SWIFT_MODULE_DEPENDS_TVOS
         SWIFT_MODULE_DEPENDS_WASI
@@ -1816,6 +1830,17 @@ function(add_swift_target_library name)
     set(SWIFTLIB_TARGET_SDKS ${SWIFT_SDKS})
   endif()
   list_replace(SWIFTLIB_TARGET_SDKS ALL_APPLE_PLATFORMS "${SWIFT_DARWIN_PLATFORMS}")
+
+  # Support adding a "NOT" on the front to mean all SDKs except the following
+  list(GET SWIFTLIB_TARGET_SDKS 0 first_sdk)
+  if("${first_sdk}" STREQUAL "NOT")
+    list(REMOVE_AT SWIFTLIB_TARGET_SDKS 0)
+    list_subtract("${SWIFT_SDKS}" "${SWIFTLIB_TARGET_SDKS}"
+      "SWIFTLIB_TARGET_SDKS")
+  endif()
+
+  list_intersect(
+    "${SWIFTLIB_TARGET_SDKS}" "${SWIFT_SDKS}" SWIFTLIB_TARGET_SDKS)
 
   # All Swift code depends on the standard library, except for the standard
   # library itself.
@@ -1959,7 +1984,10 @@ function(add_swift_target_library name)
     elseif(sdk STREQUAL "LINUX" OR sdk STREQUAL "ANDROID")
       list(APPEND swiftlib_module_depends_flattened
            ${SWIFTLIB_SWIFT_MODULE_DEPENDS_LINUX})
-    elseif(sdk STREQUAL "CYGWIN")
+    elseif(${sdk} STREQUAL "MUSL")
+      list(APPEND swiftlib_module_depends_flattened
+          ${SWIFTLIB_SWIFT_MODULE_DEPENDS_MUSL})
+    elseif(${sdk} STREQUAL "CYGWIN")
       list(APPEND swiftlib_module_depends_flattened
            ${SWIFTLIB_SWIFT_MODULE_DEPENDS_CYGWIN})
     elseif(sdk STREQUAL "HAIKU")
@@ -2211,12 +2239,21 @@ function(add_swift_target_library name)
         set(back_deployment_library_option)
       endif()
 
+      # If the SDK is static only, always build static instead of dynamic
+      if(SWIFT_SDK_${sdk}_STATIC_ONLY AND SWIFTLIB_SHARED)
+        set(shared)
+        set(static STATIC)
+      else()
+        set(shared ${SWIFTLIB_SHARED_keyword})
+        set(static ${SWIFTLIB_STATIC_keyword})
+      endif()
+
       # Add this library variant.
       add_swift_target_library_single(
         ${variant_name}
         ${name}
-        ${SWIFTLIB_SHARED_keyword}
-        ${SWIFTLIB_STATIC_keyword}
+        ${shared}
+        ${static}
         ${SWIFTLIB_NO_LINK_NAME_keyword}
         ${SWIFTLIB_OBJECT_LIBRARY_keyword}
         ${SWIFTLIB_INSTALL_WITH_SHARED_keyword}
@@ -2272,23 +2309,19 @@ function(add_swift_target_library name)
 
       if(NOT SWIFTLIB_OBJECT_LIBRARY)
         # Add dependencies on the (not-yet-created) custom lipo target.
-        foreach(DEP ${SWIFTLIB_LINK_LIBRARIES})
-          if (NOT "${DEP}" STREQUAL "icucore" AND
-              NOT "${DEP}" STREQUAL "dispatch" AND
-              NOT "${DEP}" STREQUAL "BlocksRuntime")
+        foreach(dep ${SWIFTLIB_LINK_LIBRARIES})
+          if (NOT "${dep}" MATCHES "^(icucore|dispatch|BlocksRuntime)($|-.*)$")
             add_dependencies(${VARIANT_NAME}
-              "${DEP}-${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
+              "${dep}-${SWIFT_SDK_${sdk}_LIB_SUBDIR}")
           endif()
         endforeach()
 
         if (SWIFTLIB_IS_STDLIB AND SWIFTLIB_STATIC)
           # Add dependencies on the (not-yet-created) custom lipo target.
-          foreach(DEP ${SWIFTLIB_LINK_LIBRARIES})
-            if (NOT "${DEP}" STREQUAL "icucore" AND
-                NOT "${DEP}" STREQUAL "dispatch" AND
-                NOT "${DEP}" STREQUAL "BlocksRuntime")
+          foreach(dep ${SWIFTLIB_LINK_LIBRARIES})
+            if (NOT "${dep}" MATCHES "^(icucore|dispatch|BlocksRuntime)($|-.*)$")
               add_dependencies("${VARIANT_NAME}-static"
-                "${DEP}-${SWIFT_SDK_${sdk}_LIB_SUBDIR}-static")
+                "${dep}-${SWIFT_SDK_${sdk}_LIB_SUBDIR}-static")
             endif()
           endforeach()
         endif()
@@ -2332,7 +2365,7 @@ function(add_swift_target_library name)
 
     if(NOT SWIFTLIB_OBJECT_LIBRARY)
       # Determine the name of the universal library.
-      if(SWIFTLIB_SHARED)
+      if(SWIFTLIB_SHARED AND NOT SWIFT_SDK_${sdk}_STATIC_ONLY)
         if("${sdk}" STREQUAL "WINDOWS")
           set(UNIVERSAL_LIBRARY_NAME
             "${SWIFTLIB_DIR}/${library_subdir}/${name}.dll")
@@ -2344,12 +2377,18 @@ function(add_swift_target_library name)
             "${SWIFTLIB_DIR}/${library_subdir}/${CMAKE_SHARED_LIBRARY_PREFIX}${name}${CMAKE_SHARED_LIBRARY_SUFFIX}")
         endif()
       else()
+        if(SWIFTLIB_INSTALL_WITH_SHARED)
+          set(lib_dir "${SWIFTLIB_DIR}")
+        else()
+          set(lib_dir "${SWIFTSTATICLIB_DIR}")
+        endif()
+
         if("${sdk}" STREQUAL "WINDOWS")
           set(UNIVERSAL_LIBRARY_NAME
-            "${SWIFTLIB_DIR}/${library_subdir}/${name}.lib")
+            "${lib_dir}/${library_subdir}/${name}.lib")
         else()
           set(UNIVERSAL_LIBRARY_NAME
-            "${SWIFTLIB_DIR}/${library_subdir}/${CMAKE_STATIC_LIBRARY_PREFIX}${name}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+            "${lib_dir}/${library_subdir}/${CMAKE_STATIC_LIBRARY_PREFIX}${name}${CMAKE_STATIC_LIBRARY_SUFFIX}")
         endif()
       endif()
 
@@ -2381,7 +2420,8 @@ function(add_swift_target_library name)
 
       precondition(resource_dir_sdk_subdir)
 
-      if(SWIFTLIB_SHARED OR SWIFTLIB_INSTALL_WITH_SHARED)
+      if((SWIFTLIB_SHARED AND NOT SWIFT_SDK_${sdk}_STATIC_ONLY)
+          OR SWIFTLIB_INSTALL_WITH_SHARED)
         set(resource_dir "swift")
         set(file_permissions
             OWNER_READ OWNER_WRITE OWNER_EXECUTE
@@ -2812,6 +2852,14 @@ function(add_swift_target_executable name)
     set(SWIFTEXE_TARGET_TARGET_SDKS ${SWIFT_SDKS})
   endif()
   list_replace(SWIFTEXE_TARGET_TARGET_SDKS ALL_APPLE_PLATFORMS "${SWIFT_DARWIN_PLATFORMS}")
+
+  # Support adding a "NOT" on the front to mean all SDKs except the following
+  list(GET SWIFTEXE_TARGET_TARGET_SDKS 0 first_sdk)
+  if("${first_sdk}" STREQUAL "NOT")
+    list(REMOVE_AT SWIFTEXE_TARGET_TARGET_SDKS 0)
+    list_subtract("${SWIFT_SDKS}" "${SWIFTEXE_TARGET_TARGET_SDKS}"
+      "SWIFTEXE_TARGET_TARGET_SDKS")
+  endif()
 
   list_intersect(
     "${SWIFTEXE_TARGET_TARGET_SDKS}" "${SWIFT_SDKS}" SWIFTEXE_TARGET_TARGET_SDKS)

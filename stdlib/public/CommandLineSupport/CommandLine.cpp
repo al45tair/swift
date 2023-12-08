@@ -24,6 +24,8 @@
 #include <cstring>
 #include <string>
 
+#include <errno.h>
+
 #include "swift/Runtime/Debug.h"
 #include "swift/Runtime/Win32.h"
 

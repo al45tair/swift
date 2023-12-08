@@ -8,8 +8,11 @@
 # See https://swift.org/LICENSE.txt for license information
 # See https://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
 
+import atexit
+import contextlib
 import os
 import platform
+import importlib.resources
 
 from . import cmake
 from . import shell
@@ -278,6 +281,10 @@ class StdlibDeploymentTarget(object):
 
     FreeBSD = Platform("freebsd", archs=["x86_64"])
 
+    Musl = Platform('musl', sdk_name='MUSL', archs=[
+        'x86_64',
+        'aarch64'])
+
     OpenBSD = OpenBSDPlatform("openbsd", archs=["amd64"])
 
     Cygwin = Platform("cygwin", archs=["x86_64"])
@@ -298,6 +305,7 @@ class StdlibDeploymentTarget(object):
         AppleWatch, AppleWatchSimulator,
         Freestanding,
         Linux,
+        Musl,
         FreeBSD,
         OpenBSD,
         Cygwin,

@@ -42,7 +42,7 @@ foreach(sdk ${SWIFT_SDKS})
     list(APPEND libstdcxx_modulemap_target_list ${copy_libstdcxx_header})
     add_dependencies(swift-stdlib-${arch_suffix} ${copy_libstdcxx_header})
 
-    if(SWIFT_BUILD_STATIC_STDLIB)
+    if(SWIFT_BUILD_STATIC_STDLIB OR SWIFT_SDK_${sdk}_STATIC_ONLY)
       add_custom_command_target(
           copy_libstdcxx_modulemap_static
           COMMAND
@@ -55,7 +55,6 @@ foreach(sdk ${SWIFT_SDKS})
           COMMENT "Copying libstdcxx modulemap to static resources")
       list(APPEND libstdcxx_modulemap_target_list ${copy_libstdcxx_modulemap_static})
       add_dependencies(swift-stdlib-${arch_suffix} ${copy_libstdcxx_modulemap_static})
-
       add_custom_command_target(
           copy_libstdcxx_header_static
           COMMAND
@@ -68,6 +67,13 @@ foreach(sdk ${SWIFT_SDKS})
           COMMENT "Copying libstdcxx header to static resources")
       list(APPEND libstdcxx_modulemap_target_list ${copy_libstdcxx_header_static})
       add_dependencies(swift-stdlib-${arch_suffix} ${copy_libstdcxx_header_static})
+
+      swift_install_in_component(FILES "${libstdcxx_modulemap_out_static}"
+          DESTINATION "lib/swift_static/${SWIFT_SDK_${sdk}_LIB_SUBDIR}"
+          COMPONENT sdk-overlay)
+      swift_install_in_component(FILES "${libstdcxx_header_out_static}"
+          DESTINATION "lib/swift_static/${SWIFT_SDK_${sdk}_LIB_SUBDIR}"
+          COMPONENT sdk-overlay)
     endif()
 
     swift_install_in_component(FILES "${libstdcxx_modulemap_out}"
