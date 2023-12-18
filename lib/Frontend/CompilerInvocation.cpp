@@ -188,7 +188,7 @@ void CompilerInvocation::setDefaultBlocklistsIfNecessary() {
 static void updateRuntimeLibraryPaths(SearchPathOptions &SearchPathOpts,
                                       const FrontendOptions &FrontendOpts,
                                       const LangOptions &LangOpts) {
-  llvm::Triple &Triple = LangOpts.Target;
+  const llvm::Triple &Triple = LangOpts.Target;
   llvm::SmallString<128> LibPath(SearchPathOpts.RuntimeResourcePath);
 
   StringRef LibSubDir = getPlatformNameForTriple(Triple);
