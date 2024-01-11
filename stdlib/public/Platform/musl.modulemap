@@ -17,6 +17,8 @@ module _musl [system] {
 
   header "bits/musldefs.h"
 
+  exclude header "bits/alltypes.h"
+
   // Type declarations live in bits
   module types {
     umbrella "bits/types"
