@@ -110,7 +110,7 @@ ToolChain::InvocationInfo toolchains::GenericUnix::constructInvocation(
 }
 
 std::string toolchains::GenericUnix::getDefaultLinker() const {
-  if (getTriple().isAndroid())
+  if (getTriple().isAndroid() || getTriple().isMusl())
     return "lld";
 
   switch (getTriple().getArch()) {
