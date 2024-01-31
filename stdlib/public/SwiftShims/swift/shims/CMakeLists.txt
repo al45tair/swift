@@ -227,6 +227,7 @@ if (SWIFT_STDLIB_INSTALL_PARENT_MODULE_FOR_SHIMS)
                              COMPONENT stdlib)
 endif()
 
+if (SWIFT_BUILD_STATIC_STDLIB)
 swift_install_in_component(FILES ${sources}
                            DESTINATION "lib/swift_static/shims"
                            COMPONENT stdlib)
@@ -234,6 +235,7 @@ if (SWIFT_STDLIB_INSTALL_PARENT_MODULE_FOR_SHIMS)
   swift_install_in_component(FILES "${output_dir_static}/../module.modulemap"
                              DESTINATION "lib/swift_static"
                              COMPONENT stdlib)
+endif()
 endif()
 
 # Install Clang headers under the Swift library so that an installed Swift's
