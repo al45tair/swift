@@ -411,10 +411,6 @@ public:
   /// imported.
   bool shouldImportSwiftStringProcessing() const;
 
-  /// Whether the Swift Backtracing support library should be implicitly
-  /// imported.
-  bool shouldImportSwiftBacktracing() const;
-
   /// Whether the CXX module should be implicitly imported.
   bool shouldImportCxx() const;
 
@@ -664,14 +660,6 @@ public:
   /// Whether the Swift String Processing support library can be imported
   /// i.e. if it can be found.
   bool canImportSwiftStringProcessing() const;
-
-  /// Verify that if an implicit import of the `Backtracing` module if
-  /// expected, it can actually be imported. Emit a warning, otherwise.
-  void verifyImplicitBacktracingImport();
-
-  /// Whether the Swift Backtracing support library can be imported
-  /// i.e. if it can be found.
-  bool canImportSwiftBacktracing() const;
 
   /// Whether the Cxx library can be imported
   bool canImportCxx() const;
