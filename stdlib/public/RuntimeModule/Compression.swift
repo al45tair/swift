@@ -53,9 +53,9 @@ enum CompressedImageSourceError: Error {
 // .. CompressedStream .........................................................
 
 protocol CompressedStream {
-  typealias InputSource = () throws -> UnsafeBufferPointer<UInt8>
+  typealias InputSource = () throws -> UnsafeRawBufferPointer
   typealias OutputSink = (_ used: UInt, _ done: Bool) throws
-    -> UnsafeMutableBufferPointer<UInt8>?
+    -> UnsafeMutableRawBufferPointer?
 
   func decompress(input: InputSource, output: OutputSink) throws -> UInt
 }
@@ -307,9 +307,9 @@ struct LZMAStream: CompressedStream {
 
 // .. Image Sources ............................................................
 
-fileprivate func decompress<S: CompressedStream, I: ImageSource>(
-  stream: S, source: I, dataBounds: I.Bounds, uncompressedSize: UInt? = nil)
-  throws -> [UInt8] {
+fileprivate func decompress<S: CompressedStream>(
+  stream: S, source: ImageSource, dataBounds: I.Bounds, uncompressedSize: UInt? = nil)
+  throws -> ImageSource {
 
   var pos = dataBounds.base
   var remaining = dataBounds.size
@@ -321,56 +321,17 @@ fileprivate func decompress<S: CompressedStream, I: ImageSource>(
     // array.
 
     let inputBuffer
-      = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: bufSize)
+      = UnsafeMutableRawBufferPointer.allocate(capacity: bufSize)
     defer {
       inputBuffer.deallocate()
     }
 
-    return try [UInt8].init(unsafeUninitializedCapacity: Int(uncompressedSize)) {
-      (outputBuffer: inout UnsafeMutableBufferPointer<UInt8>,
-       count: inout Int) in
-
-      count = Int(try stream.decompress(
-        input: { () throws -> UnsafeBufferPointer<UInt8> in
-
-          let chunkSize = min(Int(remaining), inputBuffer.count)
-          let slice = inputBuffer[0..<chunkSize]
-          let buffer = UnsafeMutableBufferPointer(rebasing: slice)
-
-          try source.fetch(from: pos, into: buffer)
-
-          pos += I.Address(chunkSize)
-          remaining -= I.Size(chunkSize)
-
-          return UnsafeBufferPointer(buffer)
-        },
-        output: {
-          (used: UInt, done: Bool) throws -> UnsafeMutableBufferPointer<UInt8>? in
-
-          if used == 0 {
-            return outputBuffer
-          } else {
-            return nil
-          }
-        }
-      ))
-    }
-  } else {
-    // Otherwise, we decompress in chunks and append them to the array.
-
-    let buffer
-      = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: 2 * bufSize)
-    defer {
-      buffer.deallocate()
-    }
-
-    let inputBuffer = UnsafeMutableBufferPointer(rebasing: buffer[0..<bufSize])
-    let outputBuffer = UnsafeMutableBufferPointer(rebasing: buffer[bufSize...])
-
-    var data = [UInt8]()
+    var output = ImageSource(capacity: Int(uncompressedSize),
+                             isMappedImage: false)
 
     _ = try stream.decompress(
-      input: { () throws -> UnsafeBufferPointer<UInt8> in
+      input: {
+        () throws -> UnsafeRawBufferPointer in
 
         let chunkSize = min(Int(remaining), inputBuffer.count)
         let slice = inputBuffer[0..<chunkSize]
@@ -384,9 +345,51 @@ fileprivate func decompress<S: CompressedStream, I: ImageSource>(
         return UnsafeBufferPointer(buffer)
       },
       output: {
-        (used: UInt, done: Bool) throws -> UnsafeMutableBufferPointer<UInt8>? in
+        (used: UInt, done: Bool) throws -> UnsafeMutableRawBufferPointer? in
 
-        data.append(contentsOf: outputBuffer[..<Int(used)])
+        if used == 0 {
+          return outputBuffer.mutableBytes
+        } else {
+          return nil
+        }
+      }
+    )
+
+    return output
+  } else {
+    // Otherwise, we decompress in chunks and append them to the array.
+
+    let buffer
+      = UnsafeMutableRawBufferPointer.allocate(capacity: 2 * bufSize)
+    defer {
+      buffer.deallocate()
+    }
+
+    let inputBuffer = UnsafeMutableRawBufferPointer(rebasing: buffer[0..<bufSize])
+    let outputBuffer = UnsafeMutableRawBufferPointer(rebasing: buffer[bufSize...])
+
+    var output = ImageSource(isMappedImage: false)
+
+    _ = try stream.decompress(
+      input: { () throws -> UnsafeRawBufferPointer in
+
+        let chunkSize = min(Int(remaining), inputBuffer.count)
+        let slice = inputBuffer[0..<chunkSize]
+        let buffer = UnsafeMutableBufferPointer(rebasing: slice)
+
+        try source.fetch(from: pos, into: buffer)
+
+        pos += I.Address(chunkSize)
+        remaining -= I.Size(chunkSize)
+
+        return UnsafeBufferPointer(buffer)
+      },
+      output: {
+        (used: UInt, done: Bool) throws -> UnsafeMutableRawBufferPointer? in
+
+        output.append(
+          bytes: UnsafeRawBufferPointer(rebasing: outputBuffer[..<Int(used)])
+        )
         if !done {
           return outputBuffer
         } else {
@@ -395,7 +398,7 @@ fileprivate func decompress<S: CompressedStream, I: ImageSource>(
       }
     )
 
-    return data
+    return output
   }
 }
 
