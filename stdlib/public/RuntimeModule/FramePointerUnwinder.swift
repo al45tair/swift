@@ -20,7 +20,7 @@ import Swift
 public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, IteratorProtocol {
   public typealias Context = C
   public typealias MemoryReader = M
-  public typealias Address = MemoryReader.Address
+  public typealias Address = Context.Address
 
   var pc: Address
   var fp: Address
@@ -30,8 +30,6 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   var done: Bool
 
   #if os(Linux)
-  var elf32Cache: [Int:Elf32Image<FileImageSource>] = [:]
-  var elf64Cache: [Int:Elf64Image<FileImageSource>] = [:]
   var images: [Backtrace.Image]?
   #endif
 
@@ -41,8 +39,8 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
               images: [Backtrace.Image]?,
               memoryReader: MemoryReader) {
 
-    pc = Address(context.programCounter)
-    fp = Address(context.framePointer)
+    pc = context.programCounter
+    fp = context.framePointer
     first = true
     isAsync = false
     done = false
@@ -83,17 +81,19 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
          where: { address >= $0.baseAddress && address < $0.endOfText }
        ) {
       let relativeAddress = address - FileImageSource.Address(images[imageNdx].baseAddress)
-      var elf32Image = elf32Cache[imageNdx]
-      var elf64Image = elf64Cache[imageNdx]
+      let path = images[imageNdx].path
+      let cache = ElfImageCache.threadLocal
+      var elf32Image = cache.elf32[path]
+      var elf64Image = cache.elf64[path]
 
       if elf32Image == nil && elf64Image == nil {
         if let source = try? FileImageSource(path: images[imageNdx].path) {
           if let elfImage = try? Elf32Image(source: source) {
             elf32Image = elfImage
-            elf32Cache[imageNdx] = elfImage
+            cache.elf32[path] = elfImage
           } else if let elfImage = try? Elf64Image(source: source) {
             elf64Image = elfImage
-            elf64Cache[imageNdx] = elfImage
+            cache.elf64[path] = elfImage
           }
         }
       }
@@ -120,14 +120,14 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   }
 
   private func stripPtrAuth(_ address: Address) -> Address {
-    return Address(Context.stripPtrAuth(address: Context.Address(address)))
+    return Context.stripPtrAuth(address: address)
   }
 
   private mutating func fetchAsyncContext() -> Bool {
     let strippedFp = stripPtrAuth(fp)
 
     do {
-      asyncContext = try reader.fetch(from: Address(strippedFp - 8),
+      asyncContext = try reader.fetch(from: strippedFp - 8,
                                       as: Address.self)
       return true
     } catch {
@@ -135,7 +135,7 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
     }
   }
 
-  public mutating func next() -> Backtrace.Frame? {
+  public mutating func next() -> RichFrame<Address>? {
     if done {
       return nil
     }
@@ -143,7 +143,7 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
     if first {
       first = false
       pc = stripPtrAuth(pc)
-      return .programCounter(Backtrace.Address(pc))
+      return .programCounter(pc)
     }
 
     if !isAsync {
@@ -153,8 +153,7 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
         let strippedFp = stripPtrAuth(fp)
 
         if strippedFp == 0
-             || !Context.isAlignedForStack(framePointer:
-                                             Context.Address(strippedFp)) {
+             || !Context.isAlignedForStack(framePointer:strippedFp) {
           done = true
           return nil
         }
@@ -163,7 +162,7 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
           pc = stripPtrAuth(try reader.fetch(from:
                                                strippedFp + Address(MemoryLayout<Address>.size),
                                              as: Address.self))
-          next = try reader.fetch(from: Address(strippedFp), as: Address.self)
+          next = try reader.fetch(from: strippedFp, as: Address.self)
         } catch {
           done = true
           return nil
@@ -176,7 +175,7 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
 
         if !isAsyncFrame(next) {
           fp = next
-          return .returnAddress(Backtrace.Address(pc))
+          return .returnAddress(pc)
         }
       }
 
@@ -226,6 +225,6 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
 
     asyncContext = next
 
-    return .asyncResumePoint(Backtrace.Address(pc))
+    return .asyncResumePoint(pc)
   }
 }

@@ -23,7 +23,7 @@ internal import ucrt
 #elseif canImport(Glibc)
 internal import Glibc
 #elseif canImport(Musl)
-internal import Musl
+nternal import Musl
 #endif
 
 #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
@@ -38,10 +38,51 @@ internal import BacktracingImpl.ImageFormats.Elf
 public struct Backtrace: CustomStringConvertible, Sendable {
   /// The type of an address.
   ///
+  /// This is used as an opaque type; if you have some Address, you
+  /// can ask if it's NULL, and you can attempt to convert it to a
+  /// FixedWidthInteger.
+  ///
   /// This is intentionally _not_ a pointer, because you shouldn't be
   /// dereferencing them; they may refer to some other process, for
   /// example.
-  public typealias Address = UInt64
+  public struct Address: Hashable, Codable, Sendable {
+    enum Representation: Hashable, Codable, Sendable {
+      case null
+      case sixteenBit(UInt16)
+      case thirtyTwoBit(UInt32)
+      case sixtyFourBit(UInt64)
+    }
+
+    var representation: Representation
+
+    /// The width of this address, in bits
+    public var bitWidth: Int {
+      switch representation {
+        case .null:
+          return 0
+        case .sixteenBit(_):
+          return 16
+        case .thirtyTwoBit(_):
+          return 32
+        case .sixtyFourBit(_):
+          return 64
+      }
+    }
+
+    /// True if this address is a NULL pointer
+    public var isNull: Bool {
+      switch representation {
+        case .null:
+          return true
+        case let .sixteenBit(addr):
+          return addr == 0
+        case let .thirtyTwoBit(addr):
+          return addr == 0
+        case let .sixtyFourBit(addr):
+          return addr == 0
+      }
+    }
+  }
 
   /// The unwind algorithm to use.
   public enum UnwindAlgorithm {
@@ -108,6 +149,16 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     case omittedFrames(Int)
 
     /// Indicates a discontinuity of unknown length.
+    ///
+    /// This can only be present at the end of a backtrace; in other cases
+    /// we will know how many frames we have omitted.  For instance,
+    ///
+    ///    0: frame 100 <----- bottom of call stack
+    ///    1: frame 99
+    ///    2: frame 98
+    ///    3: frame 97
+    ///    4: frame 96
+    ///    5: ...       <----- truncated
     case truncated
 
     /// The program counter, without any adjustment.
@@ -139,66 +190,62 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     }
 
     /// A textual description of this frame.
-    public func description(width: Int) -> String {
+    public var description: String {
       switch self {
         case let .programCounter(addr):
-          return "\(hex(addr, width: width))"
+          return "\(addr)"
         case let .returnAddress(addr):
-          return "\(hex(addr, width: width)) [ra]"
+          return "\(addr) [ra]"
         case let .asyncResumePoint(addr):
-          return "\(hex(addr, width: width)) [async]"
+          return "\(addr) [async]"
         case .omittedFrames(_), .truncated:
           return "..."
       }
-    }
-
-    /// A textual description of this frame.
-    public var description: String {
-      return description(width: MemoryLayout<Address>.size * 2)
     }
   }
 
   /// Represents an image loaded in the process's address space
   public struct Image: CustomStringConvertible, Sendable {
     /// The name of the image (e.g. libswiftCore.dylib).
-    public var name: String
+    private(set) public var name: String?
 
     /// The full path to the image (e.g. /usr/lib/swift/libswiftCore.dylib).
-    public var path: String
+    private(set) public var path: String?
 
-    /// The build ID of the image, as a byte array (note that the exact number
-    /// of bytes may vary, and that some images may not have a build ID).
-    public var buildID: [UInt8]?
+    /// The unique ID of the image, as a byte array (note that the exact number
+    /// of bytes may vary, and that some images may not have a unique ID).
+    ///
+    /// On Darwin systems, this is the LC_UUID value; on Linux this is the
+    /// build ID, which may take one of a number of forms or may not even
+    /// be present.
+    private(set) public var uniqueID: [UInt8]?
 
     /// The base address of the image.
-    public var baseAddress: Backtrace.Address
+    private(set) public var baseAddress: Backtrace.Address
 
     /// The end of the text segment in this image.
-    public var endOfText: Backtrace.Address
+    private(set) public var endOfText: Backtrace.Address
 
     /// Provide a textual description of an Image.
-    public func description(width: Int) -> String {
-      if let buildID = self.buildID {
-        return "\(hex(baseAddress, width: width))-\(hex(endOfText, width: width)) \(hex(buildID)) \(name) \(path)"
-      } else {
-        return "\(hex(baseAddress, width: width))-\(hex(endOfText, width: width)) <no build ID> \(name) \(path)"
-      }
-    }
-
-    /// A textual description of an Image.
     public var description: String {
-      return description(width: MemoryLayout<Address>.size * 2)
+      if let buildID = self.buildID {
+        return "\(baseAddress)-\(endOfText) \(hex(buildID)) \(name) \(path)"
+      } else {
+        return "\(baseAddress)-\(endOfText) <no build ID> \(name) \(path)"
+      }
     }
   }
 
   /// The architecture of the system that captured this backtrace.
   public var architecture: String
 
-  /// The width of an address in this backtrace, in bits.
-  public var addressWidth: Int
+  /// The actual backtrace data, stored in Compact Backtrace Format.
+  private var representation: [UInt8]
 
   /// A list of captured frame information.
-  public var frames: [Frame]
+  public var frames: some Sequence<Frame> {
+    return CompactBacktraceFormat.Decoder(representation)
+  }
 
   /// A list of captured images.
   ///
@@ -208,36 +255,6 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   /// separately yourself using `captureImages()`.
   public var images: [Image]?
 
-  /// Holds information about the shared cache.
-  public struct SharedCacheInfo: Sendable {
-    /// The UUID from the shared cache.
-    public var uuid: [UInt8]
-
-    /// The base address of the shared cache.
-    public var baseAddress: Backtrace.Address
-
-    /// Says whether there is in fact a shared cache.
-    public var noCache: Bool
-  }
-
-  /// Information about the shared cache.
-  ///
-  /// Holds information about the shared cache.  On Darwin only, this is
-  /// required for symbolication.  On non-Darwin platforms it will always
-  /// be `nil`.
-  public var sharedCacheInfo: SharedCacheInfo?
-
-  /// Format an address according to the addressWidth.
-  ///
-  /// @param address     The address to format.
-  /// @param prefix      Whether to include a "0x" prefix.
-  ///
-  /// @returns A String containing the formatted Address.
-  public func formatAddress(_ address: Address,
-                            prefix: Bool = true) -> String {
-    return hex(address, prefix: prefix, width: (addressWidth + 3) / 4)
-  }
-
   /// Capture a backtrace from the current program location.
   ///
   /// The `capture()` method itself will not be included in the backtrace;
@@ -245,28 +262,33 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   /// and its programCounter value will be the return address for the
   /// `capture()` method call.
   ///
-  /// @param algorithm     Specifies which unwind mechanism to use.  If this
-  ///                      is set to `.auto`, we will use the platform default.
-  /// @param limit         The backtrace will include at most this number of
-  ///                      frames; you can set this to `nil` to remove the
-  ///                      limit completely if required.
-  /// @param offset        Says how many frames to skip; this makes it easy to
-  ///                      wrap this API without having to inline things and
-  ///                      without including unnecessary frames in the backtrace.
-  /// @param top           Sets the minimum number of frames to capture at the
-  ///                      top of the stack.
+  /// Parameters:
   ///
-  /// @returns A new `Backtrace` struct.
+  /// - algorithm:     Specifies which unwind mechanism to use.  If this
+  ///                  is set to `.auto`, we will use the platform default.
+  /// - limit:         The backtrace will include at most this number of
+  ///                  frames; you can set this to `nil` to remove the
+  ///                  limit completely if required.
+  /// - offset:        Says how many frames to skip; this makes it easy to
+  ///                  wrap this API without having to inline things and
+  ///                  without including unnecessary frames in the backtrace.
+  /// - top:           Sets the minimum number of frames to capture at the
+  ///                  top of the stack.
+  /// - images:        (Optional) A list of captured images.  This allows you
+  ///                  to capture images once, and then generate multiple
+  ///                  backtraces using a single set of captured images.
   @inline(never)
   @_semantics("use_frame_pointer")
   public static func capture(algorithm: UnwindAlgorithm = .auto,
                              limit: Int? = 64,
                              offset: Int = 0,
-                             top: Int = 16) throws -> Backtrace {
+                             top: Int = 16,
+                             images: [Image]? = nil) throws -> Backtrace {
     #if os(Linux)
-    let images = captureImages()
+    // On Linux, we need the captured images to resolve async functions
+    let theImages = images ?? captureImages()
     #else
-    let images: [Image]? = nil
+    let theImages = images
     #endif
 
     // N.B. We use offset+1 here to skip this frame, rather than inlining
@@ -274,7 +296,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     return try HostContext.withCurrentContext { ctx in
       try capture(from: ctx,
                   using: UnsafeLocalMemoryReader(),
-                  images: images,
+                  images: theImages,
                   algorithm: algorithm,
                   limit: limit,
                   offset: offset + 1,
@@ -282,6 +304,88 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     }
   }
 
+  /// Capture a list of the images currently mapped into the calling
+  /// process.
+  ///
+  /// @returns A list of `Image`s.
+  public static func captureImages() -> [Image] {
+    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+    return captureImages(for: mach_task_self())
+    #else
+    return captureImages(using: UnsafeLocalMemoryReader())
+    #endif
+  }
+
+  /// Specifies options for the `symbolicated` method.
+  public struct SymbolicationOptions: OptionSet {
+    public let rawValue: Int
+
+    /// Add virtual frames to show inline function calls.
+    public static let showInlineFrames: SymbolicationOptions
+
+    /// Look up source locations.
+    ///
+    /// This may be expensive in some cases; it may be desirable to turn
+    /// this off e.g. in Kubernetes so that pods restart promptly on crash.
+    public static let showSourceLocations: SymbolicationOptions
+
+    /// Use a symbol cache, if one is available.
+    public static let useSymbolCache: SymbolicationOptions
+
+    public static let default: SymbolicationOptions = [.showInlineFrames,
+                                                       .showSourceLocations,
+                                                       .useSymbolCache]
+  }
+
+  /// Return a symbolicated version of the backtrace.
+  ///
+  /// - images:  Specifies the set of images to use for symbolication.
+  ///            If `nil`, the function will look to see if the `Backtrace`
+  ///            has already captured images.  If it has, those will be
+  ///            used; otherwise we will capture images at this point.
+  ///
+  /// - options: Symbolication options; see `SymbolicationOptions`.
+  public func symbolicated(with images: [Image]? = nil,
+                           options: SymbolicationOptions = .default)
+    -> SymbolicatedBacktrace? {
+    return SymbolicatedBacktrace.symbolicate(
+      backtrace: self,
+      images: images,
+      options: options
+    )
+  }
+
+  /// Provide a textual version of the backtrace.
+  public var description: String {
+    var lines: [String] = []
+
+    var n = 0
+    for frame in frames {
+      lines.append("\(n)\t\(frame.description)")
+      switch frame {
+        case let .omittedFrames(count):
+          n += count
+        default:
+          n += 1
+      }
+    }
+
+    if let images = images {
+      lines.append("")
+      lines.append("Images:")
+      lines.append("")
+      for (n, image) in images.enumerated() {
+        lines.append("\(n)\t\(image.description)")
+      }
+    }
+
+    return lines.joined(separator: "\n")
+  }
+}
+
+// -- Capture Implementation -------------------------------------------------
+
+extension Backtrace {
   @_spi(Internal)
   public static func capture<Ctx: Context, Rdr: MemoryReader>(
     from context: Ctx,
@@ -292,7 +396,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     offset: Int = 0,
     top: Int = 16
   ) throws -> Backtrace {
-    let addressWidth = 8 * MemoryLayout<Ctx.Address>.size
+    let addressWidth = Ctx.Address.bitWidth
 
     switch algorithm {
       // All of them, for now, use the frame pointer unwinder.  In the long
@@ -383,20 +487,13 @@ public struct Backtrace: CustomStringConvertible, Sendable {
         }
     }
   }
+}
 
-  /// Capture a list of the images currently mapped into the calling
-  /// process.
-  ///
-  /// @returns A list of `Image`s.
-  public static func captureImages() -> [Image] {
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
-    return captureImages(for: mach_task_self())
-    #else
-    return captureImages(using: UnsafeLocalMemoryReader())
-    #endif
-  }
+// -- Darwin -----------------------------------------------------------------
 
-  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+extension Backtrace {
+
   private static func withDyldProcessInfo<T>(for task: task_t,
                                              fn: (OpaquePointer?) throws -> T)
     rethrows -> T {
@@ -413,9 +510,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
     return try fn(dyldInfo)
   }
-  #endif
 
-  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
   @_spi(Internal)
   public static func captureImages(for process: Any) -> [Image] {
     var images: [Image] = []
@@ -459,7 +554,13 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
     return images.sorted(by: { $0.baseAddress < $1.baseAddress })
   }
-  #else // !(os(macOS) || os(iOS) || os(tvOS) || os(watchOS))
+}
+#endif // os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+
+// -- Linux ------------------------------------------------------------------
+
+#if os(linux)
+extension Backtrace {
   private struct AddressRange {
     var low: Address = 0
     var high: Address = 0
@@ -470,7 +571,6 @@ public struct Backtrace: CustomStringConvertible, Sendable {
                                                     forProcess pid: Int? = nil) -> [Image] {
     var images: [Image] = []
 
-    #if os(Linux)
     let path: String
     if let pid = pid {
       path = "/proc/\(pid)/maps"
@@ -503,6 +603,10 @@ public struct Backtrace: CustomStringConvertible, Sendable {
       }
     }
 
+    // ###FIXME: Don't use MemoryImageSource and the ElfImage stuff for this;
+    //           maybe instead have some functions in Elf.swift.  Why? Because
+    ///          this needs MemoryImageSource, which is a performance problem.
+    
     // Look for ELF headers in the process' memory
     typealias Source = MemoryImageSource<M>
     let source = Source(with: reader)
@@ -570,116 +674,10 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
       images.append(image)
     }
-    #endif
 
     return images.sorted(by: { $0.baseAddress < $1.baseAddress })
   }
-  #endif
-
-  /// Capture shared cache information.
-  ///
-  /// @returns A `SharedCacheInfo`.
-  public static func captureSharedCacheInfo() -> SharedCacheInfo? {
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
-    return captureSharedCacheInfo(for: mach_task_self())
-    #else
-    return nil
-    #endif
-  }
-
-  @_spi(Internal)
-  public static func captureSharedCacheInfo(for t: Any) -> SharedCacheInfo? {
-    #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
-    let task = t as! task_t
-    return withDyldProcessInfo(for: task) { dyldInfo in
-      var cacheInfo = dyld_process_cache_info()
-      _dyld_process_info_get_cache(dyldInfo, &cacheInfo)
-      let theUUID = withUnsafePointer(to: cacheInfo.cacheUUID) {
-        Array(UnsafeRawBufferPointer(start: $0,
-                                     count: MemoryLayout<uuid_t>.size))
-      }
-      return SharedCacheInfo(uuid: theUUID,
-                             baseAddress: Address(cacheInfo.cacheBaseAddress),
-                             noCache: cacheInfo.noCache)
-    }
-    #else // !os(Darwin)
-    return nil
-    #endif
-  }
-
-  /// Return a symbolicated version of the backtrace.
-  ///
-  /// @param images Specifies the set of images to use for symbolication.
-  ///               If `nil`, the function will look to see if the `Backtrace`
-  ///               has already captured images.  If it has, those will be
-  ///               used; otherwise we will capture images at this point.
-  ///
-  /// @param sharedCacheInfo  Provides information about the location and
-  ///                         identity of the shared cache, if applicable.
-  ///
-  /// @param showInlineFrames If `true` and we know how on the platform we're
-  ///                         running on, add virtual frames to show inline
-  ///                         function calls.
-  ///
-  /// @param showSourceLocation If `true`, look up the source location for
-  ///                           each address.
-  ///
-  /// @param useSymbolCache   If the system we are on has a symbol cache,
-  ///                         says whether or not to use it.
-  ///
-  /// @returns A new `SymbolicatedBacktrace`.
-  public func symbolicated(with images: [Image]? = nil,
-                           sharedCacheInfo: SharedCacheInfo? = nil,
-                           showInlineFrames: Bool = true,
-                           showSourceLocations: Bool = true,
-                           useSymbolCache: Bool = true)
-    -> SymbolicatedBacktrace? {
-    return SymbolicatedBacktrace.symbolicate(
-      backtrace: self,
-      images: images,
-      sharedCacheInfo: sharedCacheInfo,
-      showInlineFrames: showInlineFrames,
-      showSourceLocations: showSourceLocations,
-      useSymbolCache: useSymbolCache
-    )
-  }
-
-  /// Provide a textual version of the backtrace.
-  public var description: String {
-    var lines: [String] = []
-    let addressChars = (addressWidth + 3) / 4
-
-    var n = 0
-    for frame in frames {
-      lines.append("\(n)\t\(frame.description(width: addressChars))")
-      switch frame {
-        case let .omittedFrames(count):
-          n += count
-        default:
-          n += 1
-      }
-    }
-
-    if let images = images {
-      lines.append("")
-      lines.append("Images:")
-      lines.append("")
-      for (n, image) in images.enumerated() {
-        lines.append("\(n)\t\(image.description(width: addressChars))")
-      }
-    }
-
-    #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-    if let sharedCacheInfo = sharedCacheInfo {
-      lines.append("")
-      lines.append("Shared Cache:")
-      lines.append("")
-      lines.append("    UUID: \(hex(sharedCacheInfo.uuid))")
-      lines.append("    Base: \(hex(sharedCacheInfo.baseAddress, width: addressChars))")
-      lines.append("  Active: \(!sharedCacheInfo.noCache)")
-    }
-    #endif
-
-    return lines.joined(separator: "\n")
-  }
 }
+#endif // os(Linux)
+
+
