@@ -483,30 +483,29 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
       }
     }
     #elseif os(Linux)
-    var elf32Cache: [Int:Elf32Image<FileImageSource>] = [:]
-    var elf64Cache: [Int:Elf64Image<FileImageSource>] = [:]
+    var cache = ElfImageCache.threadLocal
 
     // This could be more efficient; at the moment we execute the line
     // number programs once per frame, whereas we could just run them once
     // for all the addresses we're interested in.
 
     for frame in backtrace.frames {
-      let address = FileImageSource.Address(frame.adjustedProgramCounter)
+      let address = ImageSource.Address(frame.adjustedProgramCounter)
       if let imageNdx = theImages.firstIndex(
            where: { address >= $0.baseAddress
                       && address < $0.endOfText }
          ) {
-        let relativeAddress = address - FileImageSource.Address(theImages[imageNdx].baseAddress)
+        let relativeAddress = address - ImageSource.Address(theImages[imageNdx].baseAddress)
         var symbol: Symbol = Symbol(imageIndex: imageNdx,
                                     imageName: theImages[imageNdx].name,
                                     rawName: "<unknown>",
                                     offset: 0,
                                     sourceLocation: nil)
-        var elf32Image = elf32Cache[imageNdx]
-        var elf64Image = elf64Cache[imageNdx]
+        var elf32Image = cache.elf32[theImages[imageNdx].path]
+        var elf64Image = cache.elf64[theImages[imageNdx].path]
 
         if elf32Image == nil && elf64Image == nil {
-          if let source = try? FileImageSource(path: theImages[imageNdx].path) {
+          if let source = try? ImageSource(path: theImages[imageNdx].path) {
             if let elfImage = try? Elf32Image(source: source) {
               elf32Image = elfImage
               elf32Cache[imageNdx] = elfImage
