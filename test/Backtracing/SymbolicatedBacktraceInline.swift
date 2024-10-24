@@ -13,7 +13,7 @@
 // which presumably doesn't have a frame pointer.  When we add the Dwarf EH
 // unwinder, we should be able to turn this test on.
 
-import _Backtracing
+import Runtime
 
 func kablam() {
   kerpow()

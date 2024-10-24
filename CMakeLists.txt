@@ -727,6 +727,10 @@ option(SWIFT_ENABLE_SYNCHRONIZATION
   "Enable build of the Swift Synchronization module"
   FALSE)
 
+option(SWIFT_ENABLE_RUNTIME_MODULE
+  "Build the Swift Runtime module"
+  FALSE)
+
 option(SWIFT_ENABLE_VOLATILE
   "Enable build of the Swift Volatile module"
   FALSE)
@@ -1395,6 +1399,7 @@ if(SWIFT_BUILD_STDLIB OR SWIFT_BUILD_SDK_OVERLAY)
   message(STATUS "Synchronization Support:            ${SWIFT_ENABLE_SYNCHRONIZATION}")
   message(STATUS "Volatile Support:                   ${SWIFT_ENABLE_VOLATILE}")
   message(STATUS "Pointer Bounds Support:             ${SWIFT_ENABLE_EXPERIMENTAL_POINTER_BOUNDS}")
+  message(STATUS "Runtime Support:                    ${SWIFT_ENABLE_RUNTIME}")
   message(STATUS "")
 else()
   message(STATUS "Not building Swift standard library, SDK overlays, and runtime")

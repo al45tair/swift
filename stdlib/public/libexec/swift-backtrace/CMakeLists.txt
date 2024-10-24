@@ -12,11 +12,11 @@ if(SWIFT_BUILD_SDK_OVERLAY)
   set(musl Musl)
 endif()
 
-# Similarly, we only want the _Backtracing dependency if we're building
+# Similarly, we only want the Runtime dependency if we're building
 # with the stdlib.
-set(backtracing)
+set(runtime)
 if(SWIFT_BUILD_STDLIB AND SWIFT_ENABLE_BACKTRACING)
-  set(backtracing _Backtracing)
+  set(runtime Runtime)
 endif()
 
 if(NOT SWIFT_BUILD_STDLIB)
@@ -24,7 +24,7 @@ if(NOT SWIFT_BUILD_STDLIB)
 endif()
 
 set(BACKTRACING_COMPILE_FLAGS
-  "-I${SWIFT_STDLIB_SOURCE_DIR}/public/Backtracing/modules"
+  "-I${SWIFT_STDLIB_SOURCE_DIR}/public/RuntimeModule/modules"
   "-Xcc;-I${SWIFT_SOURCE_DIR}/include"
   "-Xcc;-I${CMAKE_BINARY_DIR}/include")
 
@@ -49,7 +49,7 @@ endif()
 add_swift_target_executable(swift-backtrace BUILD_WITH_LIBEXEC
   ${BACKTRACING_SOURCES}
 
-  SWIFT_MODULE_DEPENDS         ${backtracing}
+  SWIFT_MODULE_DEPENDS         ${runtime}
 
   SWIFT_MODULE_DEPENDS_OSX          ${darwin}
   SWIFT_MODULE_DEPENDS_WINDOWS      ${wincrt_sdk}

@@ -989,8 +989,16 @@ struct ElfSymbolTable<SomeElfTraits: ElfTraits>: ElfSymbolTableProtocol {
   }
 }
 
-class ElfImage<SomeImageSource: ImageSource,
-               SomeElfTraits: ElfTraits>: ElfImageProtocol {
+// ###TODO: Change ImageSource to a simple struct and remove it as a generic
+// argument.  FileImageSource these days is just mmap()ed, so both
+// FileImageSource and MemoryImageSource have an address range; the only
+// difference is that MemoryImageSource is looking at loaded (by ld.so)
+// images (confusingly we use `isMappedImage` to detect that), and that
+// FileImageSource is expected to hold onto a memory mapping and remove it
+// when we're done with it.  Both of those things could be done in a struct.
+
+final class ElfImage<SomeImageSource: ImageSource,
+                     SomeElfTraits: ElfTraits>: ElfImageProtocol {
   typealias Traits = SomeElfTraits
   typealias Source = SomeImageSource
   typealias SymbolTable = ElfSymbolTable<SomeElfTraits>
