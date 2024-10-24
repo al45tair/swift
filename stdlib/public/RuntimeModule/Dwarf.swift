@@ -1757,7 +1757,7 @@ struct DwarfReader<S: DwarfSource> {
 
 @_spi(DwarfTest)
 public func testDwarfReaderFor(path: String) -> Bool {
-  guard let source = try? FileImageSource(path: path) else {
+  guard let source = try? ImageSource(path: path) else {
     print("\(path) was not accessible")
     return false
   }
@@ -1765,7 +1765,7 @@ public func testDwarfReaderFor(path: String) -> Bool {
   if let elfImage = try? Elf32Image(source: source) {
     print("\(path) is a 32-bit ELF image")
 
-    var reader: DwarfReader<Elf32Image<FileImageSource>>
+    var reader: DwarfReader<Elf32Image>
     do {
       reader = try DwarfReader(source: elfImage)
     } catch {
@@ -1782,7 +1782,7 @@ public func testDwarfReaderFor(path: String) -> Bool {
   } else if let elfImage = try? Elf64Image(source: source) {
     print("\(path) is a 64-bit ELF image")
 
-    var reader: DwarfReader<Elf64Image<FileImageSource>>
+    var reader: DwarfReader<Elf64Image>
     do {
       reader = try DwarfReader(source: elfImage)
     } catch {

@@ -26,6 +26,10 @@ internal import Glibc
 internal import Musl
 #endif
 
+enum ImageSourceError: Error {
+  case posixError(Int32)
+}
+
 struct ImageSource {
 
   private class Storage {
@@ -131,6 +135,24 @@ struct ImageSource {
       self.buffer = .substorage(parent, chunk)
     }
 
+    init(path: String) throws {
+      let fd = open(path, O_RDONLY, 0)
+      if fd < 0 {
+        throw ImageSourceError.posixError(errno)
+      }
+      defer { close(fd) }
+      let size = lseek(fd, 0, SEEK_END)
+      if size < 0 {
+        throw ImageSourceError.posixError(errno)
+      }
+      let base = mmap(nil, Int(size), PROT_READ, MAP_FILE|MAP_PRIVATE, fd, 0)
+      if base == nil || base! == UnsafeRawPointer(bitPattern: -1)! {
+        throw ImageSourceError.posixError(errno)
+      }
+      self.buffer = .mapped(UnsafeRawBufferPointer(
+                              start: base, count: Int(size)))
+    }
+
     deinit {
       switch buffer {
         case let .allocated(bytes, _):
@@ -231,10 +253,10 @@ struct ImageSource {
   var mutableBytes: UnsafeMutableRawBufferPointer { return storage.mutableBytes }
 
   /// Says whether we are looking at a loaded (i.e. with ld.so or dyld) image.
-  var isMappedImage: Bool
+  private(set) var isMappedImage: Bool
 
   /// If this ImageSource knows its path, this will be non-nil.
-  var path: String?
+  private(set) var path: String?
 
   /// Private initialiser, not for general use
   private init(storage: Storage, isMappedImage: Bool, path: String?) {
@@ -266,6 +288,12 @@ struct ImageSource {
          isMappedImage: isMappedImage, path: path)
   }
 
+  /// Initialise with a mapped file
+  init(path: String) throws {
+    init(storage: try Storage(path: path),
+         isMappedImage: false, path: path)
+  }
+
   /// Get a sub-range of this ImageSource as an ImageSource
   subscript(range: Range<Int>) -> ImageSource {
     return ImageSource(storage: storage[range],
@@ -276,5 +304,27 @@ struct ImageSource {
   /// Append bytes to an empty or allocated storage
   func append(bytes toAppend: UnsafeRawBufferPointer) {
     storage.append(bytes: toAppend)
+  }
+}
+
+// MemoryReader support
+extension ImageSource: MemoryReader {
+  public func fetch(from address: Address,
+                    into buffer: UnsafeMutableRawBufferPointer) throws {
+    let offset = Int(bitPattern: address)
+    buffer.copyMemory(from: UnsafeRawBufferPointer(
+                        rebasing: bytes[offset..<offset + buffer.count]))
+  }
+
+  public func fetch<T>(from address: Address, as type: T.Type) throws -> T {
+    return bytes.loadUnaligned(fromByteOffset: Int(bitPattern: address),
+                               as: type)
+  }
+
+  public func fetchString(from address: Address) throws -> String? {
+    let offset = Int(bitPattern: address)
+    let len = strnlen(bytes.baseAddress! + offset, bytes.count - offset)
+    let stringBytes = bytes[offset..<offset+len]
+    return String(decoding: stringBytes, as: UTF8.self)
   }
 }

@@ -122,6 +122,16 @@ extension MemoryReader {
       byteCount: buffer.count
     )
   }
+
+  public func fetch<T>(from address: Address, as type: T.Type) throws -> T {
+    let ptr = UnsafeRawPointer(bitPattern: UInt(address))!
+    return ptr.loadUnaligned(fromByteOffset: 0, as: type)
+  }
+
+  public func fetchString(from address: Address) throws -> String? {
+    let ptr = UnsafeRawPointer(bitPattern: UInt(address))!
+    return String(validatingUTF8: ptr.assumingMemoryBound(to: CChar.self))
+  }
 }
 
 #if os(macOS)
