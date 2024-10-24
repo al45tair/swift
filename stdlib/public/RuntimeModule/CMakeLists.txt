@@ -35,12 +35,10 @@ set(RUNTIME_SOURCES
   CoreSymbolication.swift
   Dwarf.swift
   Elf.swift
-  FileImageSource.swift
   FrameSequence.swift
   FramePointerUnwinder.swift
   Image.swift
   ImageSource.swift
-  MemoryImageSource.swift
   MemoryReader.swift
   ProcMapsScanner.swift
   Registers.swift

@@ -603,29 +603,8 @@ extension Backtrace {
       }
     }
 
-    // ###FIXME: Don't use MemoryImageSource and the ElfImage stuff for this;
-    //           maybe instead have some functions in Elf.swift.  Why? Because
-    ///          this needs MemoryImageSource, which is a performance problem.
-    
-    // Look for ELF headers in the process' memory
-    typealias Source = MemoryImageSource<M>
-    let source = Source(with: reader)
-    for match in ProcMapsScanner(procMaps) {
-      let path = stripWhitespace(match.pathname)
-      if match.inode == "0" || path == "" {
-        continue
-      }
-
-      guard let start = Address(match.start, radix: 16),
-            let end = Address(match.end, radix: 16),
-            let offset = Address(match.offset, radix: 16) else {
-        continue
-      }
-
-      if offset != 0 || end - start < EI_NIDENT {
-        continue
-      }
-
+    // Look at each mapped file to see if it's an ELF image
+    for (path, range) in mappedFiles {
       // Extract the filename from path
       let name: Substring
       if let slashIndex = path.lastIndex(of: "/") {
@@ -635,40 +614,15 @@ extension Backtrace {
       }
 
       // Inspect the image and extract the UUID and end of text
-      let range = mappedFiles[path]!
-      let subSource = SubImageSource(parent: source,
-                                     baseAddress: Source.Address(range.low),
-                                     length: Source.Size(range.high
-                                                           - range.low))
-      var theUUID: [UInt8]? = nil
-      var endOfText: Address = range.low
-
-      if let image = try? Elf32Image(source: subSource) {
-        theUUID = image.uuid
-
-        for hdr in image.programHeaders {
-          if hdr.p_type == .PT_LOAD && (hdr.p_flags & PF_X) != 0 {
-            endOfText = max(endOfText, range.low + Address(hdr.p_vaddr
-                                                             + hdr.p_memsz))
-          }
-        }
-      } else if let image = try? Elf64Image(source: subSource) {
-        theUUID = image.uuid
-
-        for hdr in image.programHeaders {
-          if hdr.p_type == .PT_LOAD && (hdr.p_flags & PF_X) != 0 {
-            endOfText = max(endOfText, range.low + Address(hdr.p_vaddr
-                                                             + hdr.p_memsz))
-          }
-        }
-      } else {
-        // Not a valid ELF image
+      guard let (endOfText, uuid) = getElfImageInfo(at: range.low,
+                                                    using: reader) else {
+        // Not an ELF iamge
         continue
       }
 
       let image = Image(name: String(name),
                         path: String(path),
-                        buildID: theUUID,
+                        buildID: uuid,
                         baseAddress: range.low,
                         endOfText: endOfText)
 

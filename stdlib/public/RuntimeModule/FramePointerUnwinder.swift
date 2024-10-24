@@ -74,20 +74,20 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   private mutating func isAsyncPC(_ pc: Address) -> Bool {
     // On Linux, we need to examine the PC to see if this is an async frame
     #if os(Linux)
-    let address = FileImageSource.Address(pc)
+    let address = ImageSource.Address(pc)
 
     if let images = images,
        let imageNdx = images.firstIndex(
          where: { address >= $0.baseAddress && address < $0.endOfText }
        ) {
-      let relativeAddress = address - FileImageSource.Address(images[imageNdx].baseAddress)
+      let relativeAddress = address - ImageSource.Address(images[imageNdx].baseAddress)
       let path = images[imageNdx].path
       let cache = ElfImageCache.threadLocal
       var elf32Image = cache.elf32[path]
       var elf64Image = cache.elf64[path]
 
       if elf32Image == nil && elf64Image == nil {
-        if let source = try? FileImageSource(path: images[imageNdx].path) {
+        if let source = try? ImageSource(path: images[imageNdx].path) {
           if let elfImage = try? Elf32Image(source: source) {
             elf32Image = elfImage
             cache.elf32[path] = elfImage
