@@ -31,8 +31,8 @@ internal import Musl
 /// if you take multiple backtraces from a thread, you won't load the same
 /// image multiple times.
 final class ElfImageCache {
-  var elf32: [String: Elf32Image<FileImageSource>] = [:]
-  var elf64: [String: Elf64Image<FileImageSource>] = [:]
+  var elf32: [String: Elf32Image] = [:]
+  var elf64: [String: Elf64Image] = [:]
 
   func purge() {
     elf32Cache = [:]
