@@ -25,6 +25,11 @@ fileprivate let pageMask = pageSize - 1
 fileprivate let maxCachedSize = pageSize * 8
 
 @_spi(MemoryReaders)
+#if os(Linux)
+@_specialize(exported: true, kind: full, where T == MemserverMemoryReader)
+#endif
+@_specialize(exported: true, kind: full, where T == RemoteMemoryReader)
+@_specialize(exported: true, kind: full, where T == LocalMemoryReader)
 public class CachingMemoryReader<T: MemoryReader>: MemoryReader {
   private var reader: T
   private var cache: [Address:UnsafeRawBufferPointer]
