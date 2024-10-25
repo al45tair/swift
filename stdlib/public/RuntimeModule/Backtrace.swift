@@ -387,6 +387,11 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
 extension Backtrace {
   @_spi(Internal)
+  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == UnsafeLocalMemoryReader)
+  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == CachingRemoteMemoryReader)
+  #if os(linux)
+  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == CachingMemserverMemoryReader)
+  #endif
   public static func capture<Ctx: Context, Rdr: MemoryReader>(
     from context: Ctx,
     using memoryReader: Rdr,
@@ -567,6 +572,9 @@ extension Backtrace {
   }
 
   @_spi(Internal)
+  @_specialize(exported: true, kind: full, where M == UnsafeLocalMemoryReader)
+  @_specialize(exported: true, kind: full, where M == CachingRemoteMemoryReader)
+  @_specialize(exported: true, kind: full, where M == CachingLocalMemoryReader)
   public static func captureImages<M: MemoryReader>(using reader: M,
                                                     forProcess pid: Int? = nil) -> [Image] {
     var images: [Image] = []

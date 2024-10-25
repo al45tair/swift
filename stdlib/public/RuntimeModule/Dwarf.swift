@@ -248,10 +248,12 @@ enum DwarfSection {
 
 protocol DwarfSource {
 
-  func getDwarfSection(_ section: DwarfSection) -> (any ImageSource)?
+  func getDwarfSection(_ section: DwarfSection) -> ImageSource?
 
 }
 
+@_specialize(kind: full, where S == Elf32Image)
+@_specialize(kind: full, where S == Elf64Image)
 struct DwarfReader<S: DwarfSource> {
 
   typealias Source = S
@@ -271,14 +273,14 @@ struct DwarfReader<S: DwarfSource> {
     var attributes: [(Dwarf_Attribute, Dwarf_Form, Int64?)]
   }
 
-  var infoSection: any ImageSource
-  var abbrevSection: any ImageSource
-  var lineSection: (any ImageSource)?
-  var addrSection: (any ImageSource)?
-  var strSection: (any ImageSource)?
-  var lineStrSection: (any ImageSource)?
-  var strOffsetsSection: (any ImageSource)?
-  var rangesSection: (any ImageSource)?
+  var infoSection: ImageSource
+  var abbrevSection: ImageSource
+  var lineSection: ImageSource?
+  var addrSection: ImageSource?
+  var strSection: ImageSource?
+  var lineStrSection: ImageSource?
+  var strOffsetsSection: ImageSource?
+  var rangesSection: ImageSource?
   var shouldSwap: Bool
 
   typealias DwarfAbbrev = UInt64
@@ -1577,7 +1579,7 @@ struct DwarfReader<S: DwarfSource> {
       if tag != .DW_TAG_subprogram {
         return
       }
-      
+
       refAttrs = try readDieAttributes(
         at: &cursor,
         unit: unit,
