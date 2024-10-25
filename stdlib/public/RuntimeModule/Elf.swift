@@ -844,6 +844,8 @@ protocol ElfImageProtocol: Image, ElfGetSectionProtocol, DwarfSource {
   func _getSymbolTable(debug: Bool) -> SymbolTable
 }
 
+@_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+@_specialize(kind: full, where SomeElfTraits == Elf64Traits)
 struct ElfSymbolTable<SomeElfTraits: ElfTraits>: ElfSymbolTableProtocol {
   typealias Traits = SomeElfTraits
 
@@ -989,6 +991,8 @@ struct ElfSymbolTable<SomeElfTraits: ElfTraits>: ElfSymbolTableProtocol {
   }
 }
 
+@_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+@_specialize(kind: full, where SomeElfTraits == Elf64Traits)
 final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
   typealias Traits = SomeElfTraits
   typealias SymbolTable = ElfSymbolTable<SomeElfTraits>
@@ -1705,6 +1709,11 @@ typealias Elf64Image = ElfImage<Elf64Traits>
 
 /// Test if there is a valid ELF image at the specified address; if there is,
 /// extract the address range for the text segment and the UUID, if any.
+@_specialize(kind: full, where R == UnsafeLocalMemoryReader)
+@_specialize(kind: full, where R == CachingRemoteMemoryReader)
+#if os(linux)
+@_specialize(kind: full, where R == CachingMemserverMemoryReader)
+#endif
 func getElfImageInfo<R: MemoryReader>(at address: R.Address,
                                       using reader: R)
   -> (endOfText: R.Address, uuid: [UInt8]?)?
@@ -1735,6 +1744,14 @@ func getElfImageInfo<R: MemoryReader>(at address: R.Address,
   }
 }
 
+@_specialize(kind: full, where R == UnsafeLocalMemoryReader, Traits == Elf32Traits)
+@_specialize(kind: full, where R == UnsafeLocalMemoryReader, Traits == Elf64Traits)
+@_specialize(kind: full, where R == CachineRemoteMemoryReader, Traits == Elf32Traits)
+@_specialize(kind: full, where R == CachingRemoteMemoryReader, Traits == Elf64Traits)
+#if os(linux)
+@_specialize(kind: full, where R == CachingMemserverMemoryReader, Traits == Elf32Traits)
+@_specialize(kind: full, where R == CachingMemserverMemoryReader, Traits == Elf64Traits)
+#endif
 func getElfImageInfo<R: MemoryReader, Traits: ElfTraits>(
   at address: R.Address,
   using reader: R,

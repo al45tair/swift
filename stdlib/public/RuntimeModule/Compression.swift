@@ -308,8 +308,68 @@ struct LZMAStream: CompressedStream {
 // .. Image Sources ............................................................
 
 fileprivate func decompress<S: CompressedStream>(
-  stream: S, source: ImageSource, dataBounds: I.Bounds, uncompressedSize: UInt? = nil)
-  throws -> ImageSource {
+  stream: S,
+  source: ImageSource,
+  offset: Int,
+  output: ImageSource
+) {
+  _ = try stream.decompress(
+    input: {
+      () throws -> UnsafeRawBufferPointer in
+
+      return UnsafeRawBufferPointer(rebasing: source.bytes[offset...])
+    },
+    output: {
+      (used: UInt, done: Bool) throws -> UnsafeMutableRawBufferPointer? in
+
+      if used == 0 {
+        return output.mutableBytes
+      } else {
+        return nil
+      }
+    }
+  )
+}
+
+fileprivate func decompressChunked<S: CompressedStream>(
+  stream: S,
+  source: ImageSource,
+  offset: Int,
+  output: ImageSource
+) {
+  let bufSize = 65536
+  let outputBuffer = UnsafeMutableRawBufferPointer.allocate(capacity: bufSize)
+  defer {
+    outputBuffer.deallocate()
+  }
+
+  _ = try stream.decompress(
+    input: {
+      () throws -> UnsafeRawBufferPointer in
+
+      return UnsafeRawBufferPointer(rebasing: source.bytes[offset...])
+    },
+    output: {
+      (used: UInt, done: Bool) throws -> UnsafeMutableRawBufferPointer? in
+
+      output.append(
+        bytes: UnsafeRawBufferPointer(rebasing: outputBuffer[..<Int(used)])
+      )
+      if !done {
+        return outputBuffer
+      } else {
+        return nil
+      }
+    }
+  )
+}
+
+fileprivate func decompress<S: CompressedStream>(
+  stream: S,
+  source: ImageSource,
+  dataBounds: I.Bounds,
+  uncompressedSize: UInt? = nil
+) throws -> ImageSource {
 
   var pos = dataBounds.base
   var remaining = dataBounds.size
@@ -402,138 +462,83 @@ fileprivate func decompress<S: CompressedStream>(
   }
 }
 
-internal struct ElfCompressedImageSource<Traits: ElfTraits>: ImageSource {
-
-  private var data: [UInt8]
-
-  var isMappedImage: Bool { return false }
-  var path: String? { return nil }
-  var bounds: Bounds? { return Bounds(base: Address(0), size: Size(data.count)) }
-
-  init(source: some ImageSource) throws {
-    guard let bounds = source.bounds else {
-      throw CompressedImageSourceError.unboundedImageSource
-    }
-
-    if bounds.size < MemoryLayout<Traits.Chdr>.size {
+extension ImageSource {
+  init(elf32CompressedSource source: ImageSource) throws {
+    if source.size < MemoryLayout<Elf32_Chdr>.size {
       throw CompressedImageSourceError.badCompressedData
     }
 
-    let chdr = try source.fetch(from: bounds.base,
-                                as: Traits.Chdr.self)
-    let dataBounds = bounds.adjusted(by: MemoryLayout<Traits.Chdr>.stride)
+    let chdr = try source.fetch(from: 0, as: Elf32_Chdr.self)
     let uncompressedSize = UInt(chdr.ch_size)
+
+    init(capacity: Int(uncompressedSize), isMappedImage: false, path: nil)
 
     switch chdr.ch_type {
       case .ELFCOMPRESS_ZLIB:
-        data = try decompress(stream: ZLibStream(),
-                              source: source, dataBounds: dataBounds,
-                              uncompressedSize: uncompressedSize)
+        try decompress(ZlibStream(),
+                       source: source, offset: MemoryLayout<Elf32_Chdr>.stride,
+                       output: self)
       case .ELFCOMPRESS_ZSTD:
-        data = try decompress(stream: ZStdStream(),
-                              source: source, dataBounds: dataBounds,
-                              uncompressedSize: uncompressedSize)
+        try decompress(ZstdStream(),
+                       source: source, offset: MemoryLayout<Elf32_Chdr>.stride,
+                       output: self)
       default:
         throw CompressedImageSourceError.unsupportedFormat
     }
   }
 
-  public func fetch(from addr: Address,
-                    into buffer: UnsafeMutableRawBufferPointer) throws {
-    let toFetch = buffer.count
-    if addr < 0 || addr > data.count || data.count - Int(addr) < toFetch {
-      throw CompressedImageSourceError.outOfRangeFetch(addr, toFetch)
-    }
-
-    buffer.withMemoryRebound(to: UInt8.self) { outBuf in
-      for n in 0..<toFetch {
-        outBuf[n] = data[Int(addr) + n]
-      }
-    }
-  }
-
-}
-
-internal struct ElfGNUCompressedImageSource: ImageSource {
-
-  private var data: [UInt8]
-
-  var isMappedImage: Bool { return false }
-  var path: String? { return nil }
-  var bounds: Bounds? { return Bounds(base: Address(0), size: Size(data.count)) }
-
-  init(source: some ImageSource) throws {
-    guard let bounds = source.bounds else {
-      throw CompressedImageSourceError.unboundedImageSource
-    }
-
-    if bounds.size < 12 {
+  init(elf64CompressedSource source: ImageSource) throws {
+    if source.size < MemoryLayout<Elf64_Chdr>.size {
       throw CompressedImageSourceError.badCompressedData
     }
 
-    let magic = try source.fetch(from: bounds.base, as: UInt32.self)
+    let chdr = try source.fetch(from: 0, as: Elf64_Chdr.self)
+    let uncompressedSize = UInt(chdr.ch_size)
+
+    init(capacity: Int(uncompressedSize), isMappedImage: false, path: nil)
+
+    switch chdr.ch_type {
+      case .ELFCOMPRESS_ZLIB:
+        try decompress(ZlibStream(),
+                       source: source, offset: MemoryLayout<Elf64_Chdr>.stride,
+                       output: self)
+      case .ELFCOMPRESS_ZSTD:
+        try decompress(ZstdStream(),
+                       source: source, offset: MemoryLayout<Elf64_Chdr>.stride,
+                       output: self)
+      default:
+        throw CompressedImageSourceError.unsupportedFormat
+    }
+  }
+
+  init(gnuCompressedImageSource source: ImageSource) throws {
+    if source.size < 12 {
+      throw CompressedImageSourceError.badCompressedData
+    }
+
+    // ###TODO: Check the byte ordering here
+    let magic = try source.fetch(from: 0, as: UInt32.self)
     if magic != 0x42494c5a {
       throw CompressedImageSourceError.badCompressedData
     }
 
-    let uncompressedSize
-      = UInt(try source.fetch(from: bounds.base + 4, as: UInt64.self).byteSwapped)
+    let uncompressedSize =
+      UInt(try source.fetch(from: 4, as: UInt64.self).byteSwapped)
 
-    data = try decompress(stream: ZLibStream(),
-                          source: source,
-                          dataBounds: bounds.adjusted(by: 12),
-                          uncompressedSize: uncompressedSize)
+    init(capacity: Int(uncompressedSize), isMappedImage: false, path: nil)
+
+    try decompress(ZlibStream(),
+                   source: source, offset: 12,
+                   output: self)
   }
 
-  public func fetch(from addr: Address,
-                    into buffer: UnsafeMutableRawBufferPointer) throws {
-    let toFetch = buffer.count
-    if addr < 0 || addr > data.count || data.count - Int(addr) < toFetch {
-      throw CompressedImageSourceError.outOfRangeFetch(addr, toFetch)
-    }
+  init(lzmaCompressedImageSource source: ImageSource) throws {
+    init(isMappedImage: false, path: nil)
 
-    buffer.withMemoryRebound(to: UInt8.self) { outBuf in
-      for n in 0..<toFetch {
-        outBuf[n] = data[Int(addr) + n]
-      }
-    }
+    try decompressChunked(LZMAStream(),
+                          source: source, offset: 0,
+                          output: self)
   }
-
-}
-
-internal struct LZMACompressedImageSource: ImageSource {
-
-  private var data: [UInt8]
-
-  var isMappedImage: Bool { return false }
-  var path: String? { return nil }
-  var bounds: Bounds? { return Bounds(base: Address(0), size: Size(data.count)) }
-
-  init(source: some ImageSource) throws {
-    // Only supported for bounded image sources
-    guard let bounds = source.bounds else {
-      throw CompressedImageSourceError.unboundedImageSource
-    }
-
-    data = try decompress(stream: LZMAStream(),
-                          source: source,
-                          dataBounds: bounds)
-  }
-
-  public func fetch(from addr: Address,
-                    into buffer: UnsafeMutableRawBufferPointer) throws {
-    let toFetch = buffer.count
-    if addr < 0 || addr > data.count || data.count - Int(addr) < toFetch {
-      throw CompressedImageSourceError.outOfRangeFetch(addr, toFetch)
-    }
-
-    buffer.withMemoryRebound(to: UInt8.self) { outBuf in
-      for n in 0..<toFetch {
-        outBuf[n] = data[Int(addr) + n]
-      }
-    }
-  }
-
 }
 
 #endif // os(Linux)

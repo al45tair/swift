@@ -139,7 +139,7 @@ extension MemoryReader {
   var result: kern_return_t
 }
 
-@_spi(MemoryReaders) public struct RemoteMemoryReader: MemoryReader {
+struct BasicRemoteMemoryReader: MemoryReader {
   private var task: task_t
 
   // Sadly we can't expose the type of this argument
@@ -165,13 +165,13 @@ extension MemoryReader {
   }
 }
 
-@_spi(MemoryReaders) public struct LocalMemoryReader: MemoryReader {
+struct BasicLocalMemoryReader: MemoryReader {
   public typealias Address = UInt64
   public typealias Size = UInt64
 
   public func fetch(from address: Address,
                     into buffer: UnsafeMutableRawBufferPointer) throws {
-    let reader = RemoteMemoryReader(task: mach_task_self())
+    let reader = BasicRemoteMemoryReader(task: mach_task_self())
     return try reader.fetch(from: address, into: buffer)
   }
 }
@@ -186,7 +186,7 @@ extension MemoryReader {
   var message: String
 }
 
-@_spi(MemoryReaders) public struct MemserverMemoryReader: MemoryReader {
+public struct BasicMemserverMemoryReader: MemoryReader {
   private var fd: CInt
 
   public init(fd: CInt) {
@@ -281,7 +281,7 @@ extension MemoryReader {
   }
 }
 
-@_spi(MemoryReaders) public struct RemoteMemoryReader: MemoryReader {
+struct BasicRemoteMemoryReader: MemoryReader {
   private var pid: pid_t
 
   public init(pid: Any) {
@@ -302,7 +302,7 @@ extension MemoryReader {
   }
 }
 
-@_spi(MemoryReaders) public struct LocalMemoryReader: MemoryReader {
+struct BasicLocalMemoryReader: MemoryReader {
   private var reader: RemoteMemoryReader
 
   init() {
@@ -315,3 +315,14 @@ extension MemoryReader {
   }
 }
 #endif
+
+#if os(Linux)
+@_spi(MemoryReaders)
+typealias MemserverMemoryReader = CachingMemoryReader<MemserverMemoryReader>
+#endif
+
+@_spi(MemoryReaders)
+typealias RemoteMemoryReader = CachingMemoryReader<RemoteMemoryReader>
+
+@_spi(MemoryReaders)
+typealias LocalMemoryReader = CachingMemoryReader<LocalMemoryReader>

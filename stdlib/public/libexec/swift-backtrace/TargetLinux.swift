@@ -86,7 +86,7 @@ class Target {
     }
   }
 
-  var reader: CachingMemoryReader<MemserverMemoryReader>
+  var reader: MemserverMemoryReader>
 
   // Get the name of a process
   private static func getProcessName(pid: pid_t) -> String {

@@ -102,7 +102,7 @@ class Target {
     }
   }
 
-  var reader: CachingMemoryReader<RemoteMemoryReader>
+  var reader: RemoteMemoryReader
 
   var mcontext: MContext
 

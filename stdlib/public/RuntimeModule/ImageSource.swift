@@ -27,6 +27,7 @@ internal import Musl
 #endif
 
 enum ImageSourceError: Error {
+  case outOfBoundsRead,
   case posixError(Int32)
 }
 
@@ -312,13 +313,21 @@ extension ImageSource: MemoryReader {
   public func fetch(from address: Address,
                     into buffer: UnsafeMutableRawBufferPointer) throws {
     let offset = Int(bitPattern: address)
+    guard bytes.count >= buffer.count &&
+            offset < bytes.count - buffer.count else {
+      throw ImageSourceError.outOfBoundsRead
+    }
     buffer.copyMemory(from: UnsafeRawBufferPointer(
                         rebasing: bytes[offset..<offset + buffer.count]))
   }
 
   public func fetch<T>(from address: Address, as type: T.Type) throws -> T {
-    return bytes.loadUnaligned(fromByteOffset: Int(bitPattern: address),
-                               as: type)
+    let size = MemoryLayout<T>.size
+    let offset = Int(bitPattern: address)
+    guard offset < bytes.count - size else {
+      throw ImageSourceError.outOfBoundsRead
+    }
+    return bytes.loadUnaligned(fromByteOffset: offset, as: type)
   }
 
   public func fetchString(from address: Address) throws -> String? {
