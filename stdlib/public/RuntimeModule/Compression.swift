@@ -463,12 +463,22 @@ fileprivate func decompress<S: CompressedStream>(
 }
 
 extension ImageSource {
-  init(elf32CompressedSource source: ImageSource) throws {
-    if source.size < MemoryLayout<Elf32_Chdr>.size {
+  @_specialize(kind: full, where Traits == Elf32Traits)
+  @_specialize(kind: full, where Traits == Elf64Traits)
+  init<Traits: ElfTraits>(elfCompressedSource source: ImageSource) throws {
+    if source.size < MemoryLayout<Traits.Chdr>.size {
       throw CompressedImageSourceError.badCompressedData
     }
 
-    let chdr = try source.fetch(from: 0, as: Elf32_Chdr.self)
+    let rawChdr = try source.fetch(from: 0, as: Traits.Chdr.self)
+    let chdr: Traits.Chdr
+    switch rawChdr.ch_type {
+      case .ELFCOMPRESS_ZLIB.byteSwapped, .ELFCOMPRESS_ZSTD.byteSwapped:
+        chdr = rawChdr.byteSwapped
+      default:
+        chdr = rawChdr
+    }
+
     let uncompressedSize = UInt(chdr.ch_size)
 
     init(capacity: Int(uncompressedSize), isMappedImage: false, path: nil)
@@ -487,43 +497,23 @@ extension ImageSource {
     }
   }
 
-  init(elf64CompressedSource source: ImageSource) throws {
-    if source.size < MemoryLayout<Elf64_Chdr>.size {
-      throw CompressedImageSourceError.badCompressedData
-    }
-
-    let chdr = try source.fetch(from: 0, as: Elf64_Chdr.self)
-    let uncompressedSize = UInt(chdr.ch_size)
-
-    init(capacity: Int(uncompressedSize), isMappedImage: false, path: nil)
-
-    switch chdr.ch_type {
-      case .ELFCOMPRESS_ZLIB:
-        try decompress(ZlibStream(),
-                       source: source, offset: MemoryLayout<Elf64_Chdr>.stride,
-                       output: self)
-      case .ELFCOMPRESS_ZSTD:
-        try decompress(ZstdStream(),
-                       source: source, offset: MemoryLayout<Elf64_Chdr>.stride,
-                       output: self)
-      default:
-        throw CompressedImageSourceError.unsupportedFormat
-    }
-  }
-
-  init(gnuCompressedImageSource source: ImageSource) throws {
+  init(gnuCompressedImageSource source: ImageSource,
+       byteSwap: Bool) throws {
     if source.size < 12 {
       throw CompressedImageSourceError.badCompressedData
     }
 
-    // ###TODO: Check the byte ordering here
     let magic = try source.fetch(from: 0, as: UInt32.self)
-    if magic != 0x42494c5a {
-      throw CompressedImageSourceError.badCompressedData
+    let rawUncompressedSize = try source.fetch(from: 4, as: UInt64.self)
+    let uncompressedSize: UInt64
+    switch magic {
+      case 0x42494c5a: // BILZ
+        uncompressedSize = rawUncompressedSize.byteSwapped
+      case 0x5a4c4942: // ZLIB
+        uncompressedSize = rawUncompressedSize
+      default:
+        throw CompressedImageSourceError.badCompressedData
     }
-
-    let uncompressedSize =
-      UInt(try source.fetch(from: 4, as: UInt64.self).byteSwapped)
 
     init(capacity: Int(uncompressedSize), isMappedImage: false, path: nil)
 

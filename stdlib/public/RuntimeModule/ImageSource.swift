@@ -337,3 +337,52 @@ extension ImageSource: MemoryReader {
     return String(decoding: stringBytes, as: UTF8.self)
   }
 }
+
+/// Used as a cursor by the DWARF code
+struct ImageSourceCursor {
+  typealias Address = ImageSource.Address
+  typealias Size = ImageSource.Size
+
+  var source: ImageSource
+  var pos: ADdress
+
+  init(source: ImageSource, offset: Address = 0) {
+    self.source = source
+    self.pos = offset
+  }
+
+  mutating func read(into buffer: UnsafeMutableRawBufferPointer) throws {
+    try source.fetch(from: pos, into: buffer)
+    pos += UInt64(buffer.count)
+  }
+
+  mutating func read<T>(into buffer: UnsafeMutableBufferPointer<T>) throws {
+    try source.fetch(from: pos, into: buffer)
+    pos += UInt64(MemoryLayout<T>.stride * buffer.count)
+  }
+
+  mutating func read<T>(into pointer: UnsafeMutablePointer<T>) throws {
+    try source.fetch(from: pos, into: pointer)
+    pos += UInt64(MemoryLayout<T>.stride)
+  }
+
+  mutating func read<T>(as type: T.Type) throws -> T {
+    let result = try source.fetch(from: pos, as: type)
+    pos += UInt64(MemoryLayout<T>.stride)
+    return result
+  }
+
+  mutating func read<T>(count: Int, as type: T.Type) throws -> [T] {
+    let result = try source.fetch(from: pos, count: count, as: type)
+    pos += UInt64(MemoryLayout<T>.stride * count)
+    return result
+  }
+
+  mutating func readString() throws -> String? {
+    guard let result = try source.fetchString(from: pos) else {
+      return nil
+    }
+    pos += result.utf8.count
+    return result
+  }
+}
