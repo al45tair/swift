@@ -15,8 +15,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if os(Linux)
-
 import Swift
 
 internal import BacktracingImpl.ImageFormats.Dwarf
@@ -372,7 +370,7 @@ struct DwarfReader<S: DwarfSource> {
     var standardOpcodeLengths: [UInt64]
     var directories: [String] = []
     var files: [FileInfo] = []
-    var program: [UInt8] = []
+    var program: ImageSource
     var shouldSwap: Bool
 
     /// Compute the full path for a file, given its index in the file table.
@@ -402,9 +400,8 @@ struct DwarfReader<S: DwarfSource> {
     mutating func executeProgram(
       line: (LineNumberState, inout Bool) -> ()
     ) throws {
-      let source = ArrayImageSource(array: program)
-      let bounds = source.bounds!
-      var cursor = ImageSourceCursor(source: source)
+      let end = source.bytes.count
+      var cursor = ImageSourceCursor(source: program)
 
       func maybeSwap<T: FixedWidthInteger>(_ x: T) -> T {
         if shouldSwap {
@@ -435,7 +432,7 @@ struct DwarfReader<S: DwarfSource> {
       // Flag to allow fast exit
       var done = false
 
-      while !done && cursor.pos < bounds.end {
+      while !done && cursor.pos < end {
         let opcode = try cursor.read(as: Dwarf_LNS_Opcode.self)
 
         if opcode.rawValue >= opcodeBase {
@@ -646,14 +643,11 @@ struct DwarfReader<S: DwarfSource> {
   }
 
   private func readUnits() throws -> [Unit] {
-    guard let bounds = infoSection.bounds else {
-      return []
-    }
-
+    let end = infoSection.bytes.count
     var units: [Unit] = []
     var cursor = ImageSourceCursor(source: infoSection)
 
-    while cursor.pos < bounds.end {
+    while cursor.pos < end {
       // See 7.5.1.1 Full and Partial Compilation Unit Headers
       let base = cursor.pos
 
@@ -804,15 +798,15 @@ struct DwarfReader<S: DwarfSource> {
   }
 
   private func readLineNumberInfo() throws -> [LineNumberInfo] {
-    guard let lineSection = lineSection,
-          let bounds = lineSection.bounds else {
+    guard let lineSection = lineSection else {
       return []
     }
 
+    let end = lineSection.bytes.count
     var result: [LineNumberInfo] = []
     var cursor = ImageSourceCursor(source: lineSection, offset: 0)
 
-    while cursor.pos < bounds.end {
+    while cursor.pos < end {
       // 6.2.4 The Line Number Program Header
 
       // .1 unit_length
@@ -1035,9 +1029,8 @@ struct DwarfReader<S: DwarfSource> {
       }
 
       // The actual program comes next
-      let program = try cursor.read(count: Int(nextOffset - cursor.pos),
-                                    as: UInt8.self)
-
+      let program = ImageSource(parent: cursor.source,
+                                range: cursor.pos..<nextOffset)
       cursor.pos = nextOffset
 
       result.append(LineNumberInfo(
@@ -1810,5 +1803,3 @@ public func testDwarfReaderFor(path: String) -> Bool {
     return false
   }
 }
-
-#endif // os(Linux)

@@ -17,8 +17,6 @@
 
 // ###FIXME: We shouldn't really use String for paths.
 
-#if os(Linux)
-
 import Swift
 
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
@@ -1393,9 +1391,8 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
 
     if let debugData = getSection(".gnu_debugdata") {
       do {
-        let source = try LZMACompressedImageSource(source: debugData)
-        _debugImage = try ElfImage<LZMACompressedImageSource,
-                                   Traits>(source: source)
+        let source = try ImageSource(lzmaCompressedImageSource: debugData)
+        _debugImage = try ElfImage<Traits>(source: source)
         _checkedDebugImage = true
         return _debugImage
       } catch let CompressedImageSourceError.libraryNotFound(library) {
@@ -1418,7 +1415,7 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
   /// In general, the section may be compressed or even in a different image;
   /// this is particularly the case for debug sections.  We will only attempt
   /// to look for other images if `debug` is `true`.
-  func getSection(_ name: String, debug: Bool) -> (any ImageSource)? {
+  func getSection(_ name: String, debug: Bool) -> ImageSource? {
     if let sectionHeaders = sectionHeaders {
       let zname = ".z" + name.dropFirst()
       let stringShdr = sectionHeaders[Int(header.e_shstrndx)]
@@ -1435,21 +1432,19 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
           }
 
           if name == sname {
-            let subSource = SubImageSource(parent: source,
-                                           baseAddress: ImageSource.Address(shdr.sh_offset),
-                                           length: ImageSource.Size(shdr.sh_size))
+            let subSource = ImageSource(parent: source,
+                                        range: shdr.sh_offset..<shdr.sh_offset + shdr.sh_size)
             if (shdr.sh_flags & Traits.Shdr.Flags(SHF_COMPRESSED)) != 0 {
-              return try ElfCompressedImageSource<Traits>(source: subSource)
+              return try ImageSource(elfCompressedImageSource: subSource)
             } else {
               return subSource
             }
           }
 
           if zname == sname {
-            let subSource = SubImageSource(parent: source,
-                                           baseAddress: ImageSource.Address(shdr.sh_offset),
-                                           length: ImageSource.Size(shdr.sh_size))
-            return try ElfGNUCompressedImageSource(source: subSource)
+            let subSource = ImageSource(parent: source,
+                                        range: shdr.sh_offset..<shdr.sh_offset + shdr.sh_size)
+            return try ImageSource(gnuCompressedImageSource: subSource)
           }
         }
       } catch let CompressedImageSourceError.libraryNotFound(library) {
@@ -1601,7 +1596,7 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
                        offset: Int(relativeAddress - symbol.value))
   }
 
-  func getDwarfSection(_ section: DwarfSection) -> (any ImageSource)? {
+  func getDwarfSection(_ section: DwarfSection) -> ImageSource? {
     switch section {
       case .debugAbbrev: return getSection(".debug_abbrev")
       case .debugAddr: return getSection(".debug_addr")
@@ -1916,5 +1911,3 @@ public func testElfImageAt(path: String) -> Bool {
     return false
   }
 }
-
-#endif // os(Linux)
