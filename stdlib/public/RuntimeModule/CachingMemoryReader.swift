@@ -25,16 +25,11 @@ fileprivate let pageMask = pageSize - 1
 fileprivate let maxCachedSize = pageSize * 8
 
 @_spi(MemoryReaders)
-#if os(Linux)
-@_specialize(exported: true, kind: full, where T == MemserverMemoryReader)
-#endif
-@_specialize(exported: true, kind: full, where T == RemoteMemoryReader)
-@_specialize(exported: true, kind: full, where T == LocalMemoryReader)
-public class CachingMemoryReader<T: MemoryReader>: MemoryReader {
-  private var reader: T
+public class CachingMemoryReader<Reader: MemoryReader>: MemoryReader {
+  private var reader: Reader
   private var cache: [Address:UnsafeRawBufferPointer]
 
-  public init(for reader: T) {
+  public init(for reader: Reader) {
     self.reader = reader
     self.cache = [:]
   }
@@ -45,6 +40,11 @@ public class CachingMemoryReader<T: MemoryReader>: MemoryReader {
     }
   }
 
+  #if os(Linux)
+  @_specialize(kind: full, where Reader == UncachedMemserverMemoryReader)
+  #endif
+  @_specialize(kind: full, where Reader == UncachedRemoteMemoryReader)
+  @_specialize(kind: full, where Reader == UncachedLocalMemoryReader)
   private func getPage(at address: Address) throws -> UnsafeRawBufferPointer {
     precondition((address & Address(pageMask)) == 0)
 
@@ -63,6 +63,12 @@ public class CachingMemoryReader<T: MemoryReader>: MemoryReader {
     return result
   }
 
+  #if os(Linux)
+  @_specialize(exported: true, kind: full, where Reader == UncachedMemserverMemoryReader)
+  #endif
+  @_specialize(exported: true, kind: full, where Reader == UncachedLocalMemoryReader)
+  // ###FIXME: I can't turn this on for some reason:
+  //@_specialize(exported: true, kind: full, where Reader == UncachedRemoteMemoryReader)
   public func fetch(from address: Address,
                     into buffer: UnsafeMutableRawBufferPointer) throws {
     guard buffer.count <= maxCachedSize else {
@@ -89,3 +95,15 @@ public class CachingMemoryReader<T: MemoryReader>: MemoryReader {
     }
   }
 }
+
+#if os(Linux)
+@_spi(MemoryReaders)
+public typealias MemserverMemoryReader
+  = CachingMemoryReader<UncachedMemserverMemoryReader>
+#endif
+
+@_spi(MemoryReaders)
+public typealias RemoteMemoryReader = CachingMemoryReader<UncachedRemoteMemoryReader>
+
+@_spi(MemoryReaders)
+public typealias LocalMemoryReader = CachingMemoryReader<UncachedLocalMemoryReader>

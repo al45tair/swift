@@ -23,7 +23,7 @@ internal import ucrt
 #elseif canImport(Glibc)
 internal import Glibc
 #elseif canImport(Musl)
-nternal import Musl
+internal import Musl
 #endif
 
 #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
@@ -228,10 +228,10 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
     /// Provide a textual description of an Image.
     public var description: String {
-      if let buildID = self.buildID {
-        return "\(baseAddress)-\(endOfText) \(hex(buildID)) \(name) \(path)"
+      if let uniqueID = self.uniqueID {
+        return "\(baseAddress)-\(endOfText) \(hex(uniqueID)) \(name ?? "<unknown>") \(path ?? "<unknown>")"
       } else {
-        return "\(baseAddress)-\(endOfText) <no build ID> \(name) \(path)"
+        return "\(baseAddress)-\(endOfText) <no build ID> \(name ?? "<unknown>") \(path ?? "<unknown>")"
       }
     }
   }
@@ -243,6 +243,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   private var representation: [UInt8]
 
   /// A list of captured frame information.
+  @available(macOS 10.15, *)
   public var frames: some Sequence<Frame> {
     return CompactBacktraceFormat.Decoder(representation)
   }
@@ -321,20 +322,27 @@ public struct Backtrace: CustomStringConvertible, Sendable {
     public let rawValue: Int
 
     /// Add virtual frames to show inline function calls.
-    public static let showInlineFrames: SymbolicationOptions
+    public static let showInlineFrames: SymbolicationOptions =
+      SymbolicationOptions(rawValue: 1 << 0)
 
     /// Look up source locations.
     ///
     /// This may be expensive in some cases; it may be desirable to turn
     /// this off e.g. in Kubernetes so that pods restart promptly on crash.
-    public static let showSourceLocations: SymbolicationOptions
+    public static let showSourceLocations: SymbolicationOptions =
+      SymbolicationOptions(rawValue: 1 << 1)
 
     /// Use a symbol cache, if one is available.
-    public static let useSymbolCache: SymbolicationOptions
+    public static let useSymbolCache: SymbolicationOptions =
+      SymbolicationOptions(rawValue: 1 << 2)
 
-    public static let default: SymbolicationOptions = [.showInlineFrames,
-                                                       .showSourceLocations,
-                                                       .useSymbolCache]
+    public static let `default`: SymbolicationOptions = [.showInlineFrames,
+                                                         .showSourceLocations,
+                                                         .useSymbolCache]
+
+    public init(rawValue: Int) {
+      self.rawValue = rawValue
+    }
   }
 
   /// Return a symbolicated version of the backtrace.
@@ -381,6 +389,15 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 
     return lines.joined(separator: "\n")
   }
+
+  /// Initialise a Backtrace from a sequence of `RichFrame`s
+  init<Address: FixedWidthInteger>(architecture: String,
+       frames: some Sequence<RichFrame<Address>>,
+       images: [Image]?) {
+    self.architecture = architecture
+    self.representation = Array(CompactBacktraceFormat.Encoder(frames))
+    self.images = images
+  }
 }
 
 // -- Capture Implementation -------------------------------------------------
@@ -388,21 +405,19 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 extension Backtrace {
   @_spi(Internal)
   @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == UnsafeLocalMemoryReader)
-  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == CachingRemoteMemoryReader)
+  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == RemoteMemoryReader)
   #if os(linux)
-  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == CachingMemserverMemoryReader)
+  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == MemserverMemoryReader)
   #endif
   public static func capture<Ctx: Context, Rdr: MemoryReader>(
     from context: Ctx,
     using memoryReader: Rdr,
     images: [Image]?,
-    algorithm: UnwindAlgorithm = .auto,
-    limit: Int? = 64,
-    offset: Int = 0,
-    top: Int = 16
+    algorithm: UnwindAlgorithm,
+    limit: Int?,
+    offset: Int,
+    top: Int
   ) throws -> Backtrace {
-    let addressWidth = Ctx.Address.bitWidth
-
     switch algorithm {
       // All of them, for now, use the frame pointer unwinder.  In the long
       // run, we should be using DWARF EH frame data for .precise.
@@ -411,85 +426,21 @@ extension Backtrace {
           FramePointerUnwinder(context: context,
                                images: images,
                                memoryReader: memoryReader)
-          .dropFirst(offset)
 
         if let limit = limit {
-          if limit <= 0 {
-            return Backtrace(architecture: context.architecture,
-                             addressWidth: addressWidth,
-                             frames: [.truncated])
-          }
+          let limited = LimitSequence(unwinder,
+                                      limit: limit,
+                                      offset: offset,
+                                      top: top)
 
-          let realTop = top < limit ? top : limit - 1
-          var iterator = unwinder.makeIterator()
-          var frames: [Frame] = []
-
-          // Capture frames normally until we hit limit
-          while let frame = iterator.next() {
-            if frames.count < limit {
-              frames.append(frame)
-              if frames.count == limit {
-                break
-              }
-            }
-          }
-
-          if realTop == 0 {
-            if let _ = iterator.next() {
-              // More frames than we were asked for; replace the last
-              // one with a discontinuity
-              frames[limit - 1] = .truncated
-            }
-
-            return Backtrace(architecture: context.architecture,
-                             addressWidth: addressWidth,
-                             frames: frames)
-          } else {
-
-            // If we still have frames at this point, start tracking the
-            // last `realTop` frames in a circular buffer.
-            if let frame = iterator.next() {
-              let topSection = limit - realTop
-              var topFrames: [Frame] = []
-              var topNdx = 0
-              var omittedFrames = 0
-
-              topFrames.reserveCapacity(realTop)
-              topFrames.insert(contentsOf: frames.suffix(realTop - 1), at: 0)
-              topFrames.append(frame)
-
-              while let frame = iterator.next() {
-                topFrames[topNdx] = frame
-                topNdx += 1
-                omittedFrames += 1
-                if topNdx >= realTop {
-                  topNdx = 0
-                }
-              }
-
-              // Fix the backtrace to include a discontinuity followed by
-              // the contents of the circular buffer.
-              let firstPart = realTop - topNdx
-              let secondPart = topNdx
-              frames[topSection - 1] = .omittedFrames(omittedFrames)
-
-              frames.replaceSubrange(topSection..<(topSection+firstPart),
-                                     with: topFrames.suffix(firstPart))
-              frames.replaceSubrange((topSection+firstPart)..<limit,
-                                     with: topFrames.prefix(secondPart))
-            }
-
-            return Backtrace(architecture: context.architecture,
-                             addressWidth: addressWidth,
-                             frames: frames,
-                             images: images)
-          }
-        } else {
           return Backtrace(architecture: context.architecture,
-                           addressWidth: addressWidth,
-                           frames: Array(unwinder),
+                           frames: limited,
                            images: images)
         }
+
+        return Backtrace(architecture: context.architecture,
+                         frames: unwinder,
+                         images: images)
     }
   }
 }
@@ -550,7 +501,7 @@ extension Backtrace {
 
           images.append(Image(name: name,
                               path: pathString,
-                              buildID: theUUID,
+                              uniqueID: theUUID,
                               baseAddress: Address(machHeaderAddress),
                               endOfText: Address(endOfText)))
         }
@@ -573,8 +524,8 @@ extension Backtrace {
 
   @_spi(Internal)
   @_specialize(exported: true, kind: full, where M == UnsafeLocalMemoryReader)
-  @_specialize(exported: true, kind: full, where M == CachingRemoteMemoryReader)
-  @_specialize(exported: true, kind: full, where M == CachingLocalMemoryReader)
+  @_specialize(exported: true, kind: full, where M == RemoteMemoryReader)
+  @_specialize(exported: true, kind: full, where M == LocalMemoryReader)
   public static func captureImages<M: MemoryReader>(using reader: M,
                                                     forProcess pid: Int? = nil) -> [Image] {
     var images: [Image] = []

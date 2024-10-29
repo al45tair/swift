@@ -14,8 +14,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-enum RichFrame<T: FixedWidthInteger>: CustomStringConvertible {
-  typealias Address = T
+import Swift
+
+@_spi(Internal)
+public enum RichFrame<T: FixedWidthInteger>: CustomStringConvertible {
+  public typealias Address = T
 
   /// A program counter value.
   ///
@@ -84,7 +87,7 @@ enum RichFrame<T: FixedWidthInteger>: CustomStringConvertible {
         return addr
       case let .asyncResumePoint(addr):
         return addr
-      case .omittedFrames(_), .truncated:
+      case .omittedFrames, .truncated:
         return 0
     }
   }
@@ -98,7 +101,7 @@ enum RichFrame<T: FixedWidthInteger>: CustomStringConvertible {
         return addr
       case let .asyncResumePoint(addr):
         return addr
-      case .omittedFrames(_), .truncated:
+      case .omittedFrames, .truncated:
         return 0
     }
   }
@@ -112,9 +115,16 @@ enum RichFrame<T: FixedWidthInteger>: CustomStringConvertible {
         return "\(hex(addr)) [ra]"
       case let .asyncResumePoint(addr):
         return "\(hex(addr)) [async]"
-      case .omittedFrames(_), .truncated:
+      case .omittedFrames, .truncated:
         return "..."
     }
+  }
+}
+
+extension RichFrame: LimitableElement {
+  // LimitableElement wants to call this "omitted"
+  public static func omitted(_ count: Int) -> Self {
+    return .omittedFrames(count)
   }
 }
 

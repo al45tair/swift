@@ -99,7 +99,7 @@ private let crc32Table: [UInt32] = [
 ]
 
 private func updateCrc(_ crc: UInt32,
-                       _ bytes: UnsafeBufferPointer<UInt8>) -> UInt32 {
+                       _ bytes: UnsafeRawBufferPointer) -> UInt32 {
   var theCrc = ~crc
   for byte in bytes {
     theCrc = crc32Table[Int(UInt8(truncatingIfNeeded: theCrc)
@@ -214,6 +214,12 @@ extension Elf64_Chdr: Elf_Chdr {
       ch_size: ch_size.byteSwapped,
       ch_addralign: ch_addralign.byteSwapped
     )
+  }
+}
+
+extension Elf_Chdr_Type: ByteSwappable {
+  var byteSwapped: Self {
+    return Elf_Chdr_Type(rawValue: rawValue.byteSwapped)!
   }
 }
 
@@ -767,19 +773,17 @@ struct Elf64Traits: ElfTraits {
 // .. ElfStringSection .........................................................
 
 struct ElfStringSection {
-  let bytes: [UInt8]
+  let source: ImageSource
 
   func getStringAt(index: Int) -> String? {
-    if index < 0 || index >= bytes.count {
+    if index < 0 || index >= source.bytes.count {
       return nil
     }
 
-    let slice = bytes[index...]
+    let slice = UnsafeRawBufferPointer(rebasing: source.bytes[index...])
     var len: Int = 0
-    slice.withUnsafeBufferPointer{ ptr in
-      len = strnlen(ptr.baseAddress!, ptr.count)
-    }
-    return String(decoding: bytes[index..<index+len], as: UTF8.self)
+    len = strnlen(slice.baseAddress!, slice.count)
+    return String(decoding: source.bytes[index..<index+len], as: UTF8.self)
   }
 }
 
@@ -790,17 +794,6 @@ enum ElfImageError: Error {
   case wrongClass
   case badNoteName
   case badStringTableSectionIndex
-}
-
-protocol ElfGetSectionProtocol {
-  func getSection(_ name: String, debug: Bool) -> ImageSource?
-  func getSection(_ name: String) -> ImageSource?
-}
-
-extension ElfGetSectionProtocol {
-  func getSection(_ name: String) -> ImageSource? {
-    return getSection(name, debug: false)
-  }
 }
 
 protocol ElfSymbolProtocol: Equatable {
@@ -824,26 +817,6 @@ protocol ElfSymbolTableProtocol {
   func lookupSymbol(address: Traits.Address) -> Symbol?
 }
 
-protocol ElfImageProtocol: Image, ElfGetSectionProtocol, DwarfSource {
-  associatedtype Traits: ElfTraits
-  associatedtype SymbolTable: ElfSymbolTableProtocol
-    where SymbolTable.Traits == Traits
-
-  var header: Traits.Ehdr { get }
-  var programHeaders: [Traits.Phdr] { get }
-  var sectionHeaders: [Traits.Shdr]? { get }
-
-  var imageName: String { get }
-  var debugImage: (any ElfImageProtocol)? { get }
-  var debugLinkCRC: UInt32? { get }
-
-  var symbolTable: SymbolTable { get }
-
-  func _getSymbolTable(debug: Bool) -> SymbolTable
-}
-
-@_specialize(kind: full, where SomeElfTraits == Elf32Traits)
-@_specialize(kind: full, where SomeElfTraits == Elf64Traits)
 struct ElfSymbolTable<SomeElfTraits: ElfTraits>: ElfSymbolTableProtocol {
   typealias Traits = SomeElfTraits
 
@@ -864,43 +837,41 @@ struct ElfSymbolTable<SomeElfTraits: ElfTraits>: ElfSymbolTableProtocol {
 
   init() {}
 
-  init?<ElfImage: ElfImageProtocol>(image: ElfImage) {
+  @_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+  @_specialize(kind: full, where SomeElfTraits == Elf64Traits)
+  init?(image: ElfImage<Traits>) {
     guard let strtab = image.getSection(".strtab", debug: false),
-          let symtab = image.getSection(".symtab", debug: false),
-          let strings = strtab.fetchAllBytes(),
-          let symdata = symtab.fetchAllBytes() else {
+          let symtab = image.getSection(".symtab", debug: false) else {
       return nil
     }
 
-    let stringSect = ElfStringSection(bytes: strings)
+    let stringSect = ElfStringSection(source: strtab)
 
     // Extract all the data
-    symdata.withUnsafeBufferPointer{
-      $0.withMemoryRebound(to: Traits.Sym.self) { symbols in
-        for symbol in symbols {
-          // Ignore things that are not functions
-          if symbol.st_type != .STT_FUNC {
-            continue
-          }
-
-          // Ignore anything undefined
-          if symbol.st_shndx == SHN_UNDEF {
-            continue
-          }
-
-          _symbols.append(
-            Symbol(
-              name: (stringSect.getStringAt(index: Int(symbol.st_name))
-                       ?? "<unknown>"),
-              value: symbol.st_value,
-              size: symbol.st_size,
-              sectionIndex: Int(symbol.st_shndx),
-              binding: symbol.st_binding,
-              type: symbol.st_type,
-              visibility: symbol.st_visibility
-            )
-          )
+    symtab.bytes.withMemoryRebound(to: Traits.Sym.self) { symbols in
+      for symbol in symbols {
+        // Ignore things that are not functions
+        if symbol.st_type != .STT_FUNC {
+          continue
         }
+
+        // Ignore anything undefined
+        if symbol.st_shndx == SHN_UNDEF {
+          continue
+        }
+
+        _symbols.append(
+          Symbol(
+            name: (stringSect.getStringAt(index: Int(symbol.st_name))
+                     ?? "<unknown>"),
+            value: symbol.st_value,
+            size: symbol.st_size,
+            sectionIndex: Int(symbol.st_shndx),
+            binding: symbol.st_binding,
+            type: symbol.st_type,
+            visibility: symbol.st_visibility
+          )
+        )
       }
     }
 
@@ -916,6 +887,8 @@ struct ElfSymbolTable<SomeElfTraits: ElfTraits>: ElfSymbolTableProtocol {
     _symbols = sortedSymbols
   }
 
+  @_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+  @_specialize(kind: full, where SomeElfTraits == Elf64Traits)
   public func merged(with other: ElfSymbolTable<Traits>) -> ElfSymbolTable<Traits> {
     var merged: [Symbol] = []
 
@@ -958,6 +931,8 @@ struct ElfSymbolTable<SomeElfTraits: ElfTraits>: ElfSymbolTableProtocol {
       return ElfSymbolTable(sortedSymbols: merged)
   }
 
+  @_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+  @_specialize(kind: full, where SomeElfTraits == Elf64Traits)
   public func lookupSymbol(address: Traits.Address) -> Symbol? {
     var min = 0
     var max = _symbols.count
@@ -989,9 +964,7 @@ struct ElfSymbolTable<SomeElfTraits: ElfTraits>: ElfSymbolTableProtocol {
   }
 }
 
-@_specialize(kind: full, where SomeElfTraits == Elf32Traits)
-@_specialize(kind: full, where SomeElfTraits == Elf64Traits)
-final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
+final class ElfImage<SomeElfTraits: ElfTraits>: DwarfSource {
   typealias Traits = SomeElfTraits
   typealias SymbolTable = ElfSymbolTable<SomeElfTraits>
 
@@ -1007,6 +980,8 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
   var sectionHeaders: [Traits.Shdr]?
   var shouldByteSwap: Bool { return header.shouldByteSwap }
 
+  @_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+  @_specialize(kind: full, where SomeElfTraits == Elf64Traits)
   required init(source: ImageSource,
                 baseAddress: ImageSource.Address = 0,
                 endAddress: ImageSource.Address = 0) throws {
@@ -1078,6 +1053,8 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
       var noteAddr = ImageSource.Address()
       var noteEnd = ImageSource.Address()
 
+      @_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+      @_specialize(kind: full, where SomeElfTraits == Elf64Traits)
       init(image: ElfImage<Traits>) {
         self.image = image
       }
@@ -1094,7 +1071,17 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
         }
       }
 
+      @_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+      @_specialize(kind: full, where SomeElfTraits == Elf64Traits)
       mutating func next() -> Note? {
+        let byteSwap = image.shouldByteSwap
+        func maybeSwap<T: ByteSwappable>(_ x: T) -> T {
+          if byteSwap {
+            return x.byteSwapped
+          }
+          return x
+        }
+
         if hdrNdx >= image.programHeaders.count {
           return nil
         }
@@ -1110,7 +1097,8 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
           }
 
           do {
-            let nhdr = try image.fetch(from: noteAddr, as: Traits.Nhdr.self)
+            let nhdr = maybeSwap(try image.source.fetch(from: noteAddr,
+                                                        as: Traits.Nhdr.self))
 
             noteAddr += ImageSource.Address(MemoryLayout<Traits.Nhdr>.size)
 
@@ -1121,10 +1109,13 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
             }
 
             let nameLen = nhdr.n_namesz > 0 ? nhdr.n_namesz - 1 : 0
-            let nameBytes = try image.fetch(from: noteAddr,
-                                            count: Int(nameLen),
-                                            as: UInt8.self)
-            let name = String(decoding: nameBytes, as: UTF8.self)
+            guard let name = try image.source.fetchString(from: noteAddr,
+                                                          length: Int(nameLen))
+            else {
+              // Bad note name
+              noteAddr = noteEnd
+              continue
+            }
 
             noteAddr += ImageSource.Address(nhdr.n_namesz)
             if (noteAddr & 3) != 0 {
@@ -1137,9 +1128,9 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
               continue
             }
 
-            let desc = try image.fetch(from: noteAddr,
-                                       count: Int(nhdr.n_descsz),
-                                       as: UInt8.self)
+            let desc = try image.source.fetch(from: noteAddr,
+                                              count: Int(nhdr.n_descsz),
+                                              as: UInt8.self)
 
             noteAddr += ImageSource.Address(nhdr.n_descsz)
             if (noteAddr & 3) != 0 {
@@ -1171,7 +1162,7 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
     }
 
     for note in notes {
-      if note.name == "GNU" && note.type == ImageFormats.NT_GNU_BUILD_ID {
+      if note.name == "GNU" && note.type == NT_GNU_BUILD_ID {
         _uuid = note.desc
         return _uuid
       }
@@ -1181,41 +1172,13 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
   }
 
   private var _debugLinkCRC: UInt32?
-  var debugLinkCRC: UInt32? {
-    guard let bounds = source.bounds else {
-      return nil
-    }
-
+  var debugLinkCRC: UInt32 {
     if let crc = _debugLinkCRC {
       return crc
     }
 
-    let bufSize = 65536
-    let buffer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: bufSize)
-    defer {
-      buffer.deallocate()
-    }
-
-    var pos = bounds.base
-    var remaining = bounds.size
-    var crc: UInt32 = 0
-    do {
-      while remaining > 0 {
-        let todo = min(bufSize, Int(remaining))
-        let slice = buffer[..<todo]
-        let chunk = UnsafeMutableBufferPointer<UInt8>(rebasing: slice)
-
-        try fetch(from: pos, into: chunk)
-
-        crc = updateCrc(crc, UnsafeBufferPointer(chunk))
-
-        remaining -= ImageSource.Size(todo)
-        pos += ImageSource.Address(todo)
-      }
-    } catch {
-      return nil
-    }
-
+    let crc = updateCrc(0, source.bytes)
+    _debugLinkCRC = crc
     return crc
   }
 
@@ -1252,8 +1215,10 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
           continue
         }
 
-        guard let ehdr = try? fetch(from: ImageSource.Address(ehFrameHdrRange.base),
-                                    as: EHFrameHdr.self) else {
+        guard let ehdr = try? source.fetch(
+                from: ImageSource.Address(ehFrameHdrRange.base),
+                as: EHFrameHdr.self
+              ) else {
           continue
         }
 
@@ -1282,23 +1247,20 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
 
     if let sectionHeaders = sectionHeaders {
       let stringShdr = sectionHeaders[Int(header.e_shstrndx)]
-      do {
-        let bytes = try source.fetch(from: ImageSource.Address(stringShdr.sh_offset),
-                                     count: Int(stringShdr.sh_size),
-                                     as: UInt8.self)
-        let stringSect = ElfStringSection(bytes: bytes)
+      let base = ImageSource.Address(stringShdr.sh_offset)
+      let end = base + ImageSource.Size(stringShdr.sh_size)
+      let stringSource = source[base..<end]
+      let stringSect = ElfStringSection(source: stringSource)
 
-        for shdr in sectionHeaders {
-          guard let name = stringSect.getStringAt(index: Int(shdr.sh_name)) else {
-            continue
-          }
-
-          if name == ".eh_frame" {
-            ehFrameInfo.ehFrameSection = Range(base: ImageSource.Address(shdr.sh_offset),
-                                               size: ImageSource.Size(shdr.sh_size))
-          }
+      for shdr in sectionHeaders {
+        guard let name = stringSect.getStringAt(index: Int(shdr.sh_name)) else {
+          continue
         }
-      } catch {
+
+        if name == ".eh_frame" {
+          ehFrameInfo.ehFrameSection = Range(base: ImageSource.Address(shdr.sh_offset),
+                                             size: ImageSource.Size(shdr.sh_size))
+        }
       }
     }
 
@@ -1327,13 +1289,13 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
 
   // If we have external debug information, this points at it
   private var _checkedDebugImage: Bool?
-  private var _debugImage: (any ElfImageProtocol)?
-  var debugImage: (any ElfImageProtocol)? {
+  private var _debugImage: ElfImage<Traits>?
+  var debugImage: ElfImage<Traits>? {
     if let checked = _checkedDebugImage, checked {
       return _debugImage
     }
 
-    let tryPath = { [self] (_ path: String) -> (any ElfImageProtocol)? in
+    let tryPath = { [self] (_ path: String) -> ElfImage<Traits>? in
       do {
         let fileSource = try ImageSource(path: path)
         let image = try ElfImage<Traits>(source: fileSource)
@@ -1361,7 +1323,7 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
       let debugLink = getDebugLink()
       let debugAltLink = getDebugAltLink()
 
-      let tryLink = { (_ link: String) -> (any ElfImageProtocol)? in
+      let tryLink = { (_ link: String) -> ElfImage<Traits>? in
         if let image = tryPath("\(imageDir)/\(link)") {
           return image
         }
@@ -1415,15 +1377,17 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
   /// In general, the section may be compressed or even in a different image;
   /// this is particularly the case for debug sections.  We will only attempt
   /// to look for other images if `debug` is `true`.
-  func getSection(_ name: String, debug: Bool) -> ImageSource? {
+  @_specialize(kind: full, where SomeElfTraits == Elf32Traits)
+  @_specialize(kind: full, where SomeElfTraits == Elf64Traits)
+  func getSection(_ name: String, debug: Bool = false) -> ImageSource? {
     if let sectionHeaders = sectionHeaders {
       let zname = ".z" + name.dropFirst()
       let stringShdr = sectionHeaders[Int(header.e_shstrndx)]
       do {
-        let bytes = try source.fetch(from: ImageSource.Address(stringShdr.sh_offset),
-                                     count: Int(stringShdr.sh_size),
-                                     as: UInt8.self)
-        let stringSect = ElfStringSection(bytes: bytes)
+        let base = ImageSource.Address(stringShdr.sh_offset)
+        let end = base + ImageSource.Size(stringShdr.sh_size)
+        let stringSource = source[base..<end]
+        let stringSect = ElfStringSection(source: stringSource)
 
         for shdr in sectionHeaders {
           guard let sname
@@ -1432,18 +1396,23 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
           }
 
           if name == sname {
-            let subSource = ImageSource(parent: source,
-                                        range: shdr.sh_offset..<shdr.sh_offset + shdr.sh_size)
+            let base = ImageSource.Address(shdr.sh_offset)
+            let end = base + ImageSource.Size(shdr.sh_size)
+            let subSource = source[base..<end]
+
             if (shdr.sh_flags & Traits.Shdr.Flags(SHF_COMPRESSED)) != 0 {
-              return try ImageSource(elfCompressedImageSource: subSource)
+              return try ImageSource(elfCompressedImageSource: subSource,
+                                     traits: Traits.self)
             } else {
               return subSource
             }
           }
 
           if zname == sname {
-            let subSource = ImageSource(parent: source,
-                                        range: shdr.sh_offset..<shdr.sh_offset + shdr.sh_size)
+            let base = ImageSource.Address(shdr.sh_offset)
+            let end = base + ImageSource.Size(shdr.sh_size)
+            let subSource = source[base..<end]
+
             return try ImageSource(gnuCompressedImageSource: subSource)
           }
         }
@@ -1481,26 +1450,24 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
       return nil
     }
 
-    guard let bytes = section.fetchAllBytes() else {
+    guard let link = try? section.fetchString(from: 0) else {
       return nil
     }
 
-    guard let nullIndex = bytes.firstIndex(of: UInt8(0)) else {
+    let nullIndex = ImageSource.Address(link.utf8.count)
+    let crcIndex = (nullIndex + 4) & ~3
+
+    guard let unswappedCrc = try? section.fetch(
+            from: crcIndex, as: UInt32.self
+          ) else {
       return nil
     }
 
-    let link = String(decoding: bytes[0..<nullIndex], as: UTF8.self)
-    let crcIndex = (nullIndex + 3) & ~3
-    let crcBytes = bytes[crcIndex..<crcIndex+4]
-
-    let crc = crcBytes.withUnsafeBufferPointer {
-      $0.withMemoryRebound(to: UInt32.self) { buf in
-        if shouldByteSwap {
-          return buf[0].byteSwapped
-        } else {
-          return buf[0]
-        }
-      }
+    let crc: UInt32
+    if shouldByteSwap {
+      crc = unswappedCrc.byteSwapped
+    } else {
+      crc = unswappedCrc
     }
 
     return DebugLinkInfo(link: link, crc: crc)
@@ -1512,16 +1479,13 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
       return nil
     }
 
-    guard let bytes = section.fetchAllBytes() else {
+    guard let link = try? section.fetchString(from: 0) else {
       return nil
     }
 
-    guard let nullIndex = bytes.firstIndex(of: UInt8(0)) else {
-      return nil
-    }
+    let nullIndex = link.utf8.count
 
-    let link = String(decoding: bytes[0..<nullIndex], as: UTF8.self)
-    let uuid = [UInt8](bytes[(nullIndex+1)...])
+    let uuid = [UInt8](section.bytes[(nullIndex + 1)...])
 
     return DebugAltLinkInfo(link: link, uuid: uuid)
   }
@@ -1532,11 +1496,7 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
       return nil
     }
 
-    if let data = sectionSource.fetchAllBytes() {
-      return String(decoding: data, as: UTF8.self)
-    }
-
-    return nil
+    return String(decoding: sectionSource.bytes, as: UTF8.self)
   }
 
   struct ElfSymbol {
@@ -1628,7 +1588,7 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
 
   typealias CallSiteInfo = DwarfReader<ElfImage>.CallSiteInfo
 
-  func inlineCallSites(at address: Address) -> ArraySlice<CallSiteInfo> {
+  func inlineCallSites(at address: Traits.Address) -> ArraySlice<CallSiteInfo> {
     guard let callSiteInfo = dwarfReader?.inlineCallSites else {
       return [][0..<0]
     }
@@ -1666,7 +1626,7 @@ final class ElfImage<SomeElfTraits: ElfTraits>: ElfImageProtocol {
 
   typealias SourceLocation = SymbolicatedBacktrace.SourceLocation
 
-  func sourceLocation(for address: Address) throws -> SourceLocation? {
+  func sourceLocation(for address: Traits.Address) throws -> SourceLocation? {
     var result: SourceLocation? = nil
     var prevState: DwarfReader<ElfImage>.LineNumberState? = nil
     guard let dwarfReader = dwarfReader else {
@@ -1705,9 +1665,9 @@ typealias Elf64Image = ElfImage<Elf64Traits>
 /// Test if there is a valid ELF image at the specified address; if there is,
 /// extract the address range for the text segment and the UUID, if any.
 @_specialize(kind: full, where R == UnsafeLocalMemoryReader)
-@_specialize(kind: full, where R == CachingRemoteMemoryReader)
+@_specialize(kind: full, where R == RemoteMemoryReader)
 #if os(linux)
-@_specialize(kind: full, where R == CachingMemserverMemoryReader)
+@_specialize(kind: full, where R == MemserverMemoryReader)
 #endif
 func getElfImageInfo<R: MemoryReader>(at address: R.Address,
                                       using reader: R)
@@ -1741,22 +1701,25 @@ func getElfImageInfo<R: MemoryReader>(at address: R.Address,
 
 @_specialize(kind: full, where R == UnsafeLocalMemoryReader, Traits == Elf32Traits)
 @_specialize(kind: full, where R == UnsafeLocalMemoryReader, Traits == Elf64Traits)
-@_specialize(kind: full, where R == CachineRemoteMemoryReader, Traits == Elf32Traits)
-@_specialize(kind: full, where R == CachingRemoteMemoryReader, Traits == Elf64Traits)
+@_specialize(kind: full, where R == RemoteMemoryReader, Traits == Elf32Traits)
+@_specialize(kind: full, where R == RemoteMemoryReader, Traits == Elf64Traits)
 #if os(linux)
-@_specialize(kind: full, where R == CachingMemserverMemoryReader, Traits == Elf32Traits)
-@_specialize(kind: full, where R == CachingMemserverMemoryReader, Traits == Elf64Traits)
+@_specialize(kind: full, where R == MemserverMemoryReader, Traits == Elf32Traits)
+@_specialize(kind: full, where R == MemserverMemoryReader, Traits == Elf64Traits)
 #endif
 func getElfImageInfo<R: MemoryReader, Traits: ElfTraits>(
   at address: R.Address,
   using reader: R,
-  with traits: Traits.Type
+  traits: Traits.Type
 ) throws -> (endOfText: R.Address, uuid: [UInt8]?)? {
   // Grab the whole 32-bit header
-  let header = try reader.fetch(from: address, as: Traits.Ehdr.self)
+  let unswappedHeader = try reader.fetch(from: address, as: Traits.Ehdr.self)
 
-  if header.shouldByteSwap {
-    header = header.byteSwapped
+  let header: Traits.Ehdr
+  if unswappedHeader.shouldByteSwap {
+    header = unswappedHeader.byteSwapped
+  } else {
+    header = unswappedHeader
   }
 
   let byteSwap = header.shouldByteSwap
@@ -1772,21 +1735,22 @@ func getElfImageInfo<R: MemoryReader, Traits: ElfTraits>(
 
   // Find the last loadable executable segment, and scan for PT_NOTE
   // segments that contain the UUID
-  var phAddr = Address(address + header.e_phoff)
+  var phAddr = ImageSource.Address(address) + ImageSource.Size(header.e_phoff)
   for _ in 0..<header.e_phnum {
     let phdr = maybeSwap(try reader.fetch(from: phAddr, as: Traits.Phdr.self))
     if phdr.p_type == .PT_LOAD && (phdr.p_flags & PF_X) != 0 {
-      endOfText = max(endOfText, address + Address(phdr.p_vaddr
-                                                     + phdr.p_memsz))
+      endOfText = max(endOfText, address + ImageSource.Address(phdr.p_vaddr)
+                                   + ImageSource.Size(phdr.p_memsz))
     }
     if phdr.p_type == .PT_NOTE {
-      var noteAddr = Address(ph.p_vaddr)
-      let noteEnd = noteAddr + Address(ph.p_memsz)
+      var noteAddr = ImageSource.Address(phdr.p_vaddr)
+      let noteEnd = noteAddr + ImageSource.Size(phdr.p_memsz)
 
       while noteAddr < noteEnd {
-        let nhdr = try image.fetch(from: noteAddr, as: Traits.Nhdr.self)
+        let nhdr = maybeSwap(try reader.fetch(
+                               from: noteAddr, as: Traits.Nhdr.self))
 
-        noteAddr += Address(MemoryLayout<Traits.Nhdr>.size)
+        noteAddr += ImageSource.Size(MemoryLayout<Traits.Nhdr>.size)
 
         if noteEnd - noteAddr < nhdr.n_namesz {
           // This segment is probably corrupted, so skip it
@@ -1804,12 +1768,12 @@ func getElfImageInfo<R: MemoryReader, Traits: ElfTraits>(
           let byte2 = try reader.fetch(from: noteAddr, as: UInt8.self)
 
           if byte0 == 0x47 && byte1 == 0x4e && byte2 == 0x55 &&
-               UInt32(nhdr.n_type) == ImageFormats.NT_GNU_BUILD_ID {
+               UInt32(nhdr.n_type) == NT_GNU_BUILD_ID {
             isBuildId = true
           }
         }
 
-        noteAddr += ImageSource.Address(nhdr.n_namesz)
+        noteAddr += ImageSource.Size(nhdr.n_namesz)
         if (noteAddr & 3) != 0 {
           noteAddr += 4 - (noteAddr & 3)
         }
@@ -1826,12 +1790,14 @@ func getElfImageInfo<R: MemoryReader, Traits: ElfTraits>(
                                   as: UInt8.self)
         }
 
-        noteAddr += Address(nhdr.n_descsz)
+        noteAddr += ImageSource.Size(nhdr.n_descsz)
         if (noteAddr & 3) != 0 {
           noteAddr += 4 - (noteAddr & 3)
         }
       }
     }
+
+    phAddr += ImageSource.Address(header.e_phentsize)
   }
 
   return (endOfText: endOfText, uuid: uuid)

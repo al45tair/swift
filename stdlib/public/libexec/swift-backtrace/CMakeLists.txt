@@ -15,7 +15,7 @@ endif()
 # Similarly, we only want the Runtime dependency if we're building
 # with the stdlib.
 set(runtime)
-if(SWIFT_BUILD_STDLIB AND SWIFT_ENABLE_BACKTRACING)
+if(SWIFT_BUILD_STDLIB AND SWIFT_ENABLE_RUNTIME_MODULE)
   set(runtime Runtime)
 endif()
 

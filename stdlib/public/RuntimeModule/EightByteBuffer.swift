@@ -14,6 +14,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Swift
+
 struct EightByteBuffer {
   var word: UInt64
 
@@ -37,8 +39,6 @@ struct EightByteBuffer {
     self.init(UInt64(value))
   }
 
-  @_noLocks
-  @_noAllocation
   subscript(ndx: Int) -> UInt8 {
     get {
       if ndx < 0 || ndx >= 8 {

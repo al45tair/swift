@@ -15,6 +15,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Swift
+
 /// Sequences you wish to use with `LimitSequence` must use an element type
 /// that implements this protocol, so that `LimitSequence` can indicate when
 /// it omits or truncates the sequence.

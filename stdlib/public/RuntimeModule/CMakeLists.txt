@@ -24,21 +24,22 @@ endif()
 
 set(RUNTIME_SOURCES
   Address.swift
-  ArrayImageSource.swift
   Backtrace.swift
   BacktraceFormatter.swift
   ByteSwapping.swift
   CachingMemoryReader.swift
-  Context.swift
-  Compression.swift
   CompactBacktrace.swift
+  Compression.swift
+  Context.swift
   CoreSymbolication.swift
   Dwarf.swift
+  EightByteBuffer.swift
   Elf.swift
-  FrameSequence.swift
+  ElfImageCache.swift
   FramePointerUnwinder.swift
   Image.swift
   ImageSource.swift
+  LimitSequence.swift
   MemoryReader.swift
   ProcMapsScanner.swift
   Registers.swift

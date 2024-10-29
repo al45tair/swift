@@ -14,6 +14,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import Swift
+
 enum CompactBacktraceFormat {
   /// Tells us what size of machine words were used when generating the
   /// backtrace.
@@ -240,6 +242,7 @@ enum CompactBacktraceFormat {
   /// Adapts a Sequence of RichFrames into a sequence containing Compact
   /// Backtrace Format data.
   struct Encoder<A: FixedWidthInteger, S: Sequence<RichFrame<A>>>: Sequence {
+    typealias Element = UInt8
     typealias Frame = Backtrace.Frame
     typealias Address = A
     typealias Source = S

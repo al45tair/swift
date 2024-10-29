@@ -15,7 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if os(Linux)
+import Swift
 
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
 internal import Darwin
@@ -35,11 +35,11 @@ final class ElfImageCache {
   var elf64: [String: Elf64Image] = [:]
 
   func purge() {
-    elf32Cache = [:]
-    elf64Cache = [:]
+    elf32 = [:]
+    elf64 = [:]
   }
 
-  private static var key: pthread_key_t = {
+  private static var key: pthread_key_t? = {
     var theKey = pthread_key_t()
     let err = pthread_key_create(
       &theKey,

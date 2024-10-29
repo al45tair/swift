@@ -61,6 +61,9 @@ internal import BacktracingImpl.Runtime
 
   /// Fetch a NUL terminated string from the specified location in the source
   func fetchString(from addr: Address) throws -> String?
+
+  /// Fetch a fixed-length string from the specified location in the source
+  func fetchString(from addr: Address, length: Int) throws -> String?
 }
 
 extension MemoryReader {
@@ -110,6 +113,10 @@ extension MemoryReader {
     return String(decoding: bytes, as: UTF8.self)
   }
 
+  public func fetchString(from addr: Address, length: Int) throws -> String? {
+    let bytes = try fetch(from: addr, count: length, as: UInt8.self)
+    return String(decoding: bytes, as: UTF8.self)
+  }
 }
 
 @_spi(MemoryReaders) public struct UnsafeLocalMemoryReader: MemoryReader {
@@ -139,7 +146,8 @@ extension MemoryReader {
   var result: kern_return_t
 }
 
-struct BasicRemoteMemoryReader: MemoryReader {
+@_spi(MemoryReaders)
+public struct UncachedRemoteMemoryReader: MemoryReader {
   private var task: task_t
 
   // Sadly we can't expose the type of this argument
@@ -165,13 +173,14 @@ struct BasicRemoteMemoryReader: MemoryReader {
   }
 }
 
-struct BasicLocalMemoryReader: MemoryReader {
+@_spi(MemoryReaders)
+public struct UncachedLocalMemoryReader: MemoryReader {
   public typealias Address = UInt64
   public typealias Size = UInt64
 
   public func fetch(from address: Address,
                     into buffer: UnsafeMutableRawBufferPointer) throws {
-    let reader = BasicRemoteMemoryReader(task: mach_task_self())
+    let reader = UncachedRemoteMemoryReader(task: mach_task_self())
     return try reader.fetch(from: address, into: buffer)
   }
 }
@@ -186,7 +195,8 @@ struct BasicLocalMemoryReader: MemoryReader {
   var message: String
 }
 
-public struct BasicMemserverMemoryReader: MemoryReader {
+@_spi(MemoryReaders)
+public struct UncachedMemserverMemoryReader: MemoryReader {
   private var fd: CInt
 
   public init(fd: CInt) {
@@ -281,7 +291,8 @@ public struct BasicMemserverMemoryReader: MemoryReader {
   }
 }
 
-struct BasicRemoteMemoryReader: MemoryReader {
+@_spi(MemoryReaders)
+public struct UncachedRemoteMemoryReader: MemoryReader {
   private var pid: pid_t
 
   public init(pid: Any) {
@@ -302,7 +313,8 @@ struct BasicRemoteMemoryReader: MemoryReader {
   }
 }
 
-struct BasicLocalMemoryReader: MemoryReader {
+@_spi(MemoryReaders)
+public struct UncachedLocalMemoryReader: MemoryReader {
   private var reader: RemoteMemoryReader
 
   init() {
@@ -315,14 +327,3 @@ struct BasicLocalMemoryReader: MemoryReader {
   }
 }
 #endif
-
-#if os(Linux)
-@_spi(MemoryReaders)
-typealias MemserverMemoryReader = CachingMemoryReader<MemserverMemoryReader>
-#endif
-
-@_spi(MemoryReaders)
-typealias RemoteMemoryReader = CachingMemoryReader<RemoteMemoryReader>
-
-@_spi(MemoryReaders)
-typealias LocalMemoryReader = CachingMemoryReader<LocalMemoryReader>
