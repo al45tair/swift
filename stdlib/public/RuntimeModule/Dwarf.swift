@@ -250,8 +250,6 @@ protocol DwarfSource {
 
 }
 
-@_specialize(kind: full, where S == Elf32Image)
-@_specialize(kind: full, where S == Elf64Image)
 struct DwarfReader<S: DwarfSource> {
 
   typealias Source = S
@@ -397,10 +395,12 @@ struct DwarfReader<S: DwarfSource> {
 
     /// Execute the line number program, calling a closure for every line
     /// table entry.
+    @_specialize(kind: full, where S == Elf32Image)
+    @_specialize(kind: full, where S == Elf64Image)
     mutating func executeProgram(
       line: (LineNumberState, inout Bool) -> ()
     ) throws {
-      let end = source.bytes.count
+      let end = program.bytes.count
       var cursor = ImageSourceCursor(source: program)
 
       func maybeSwap<T: FixedWidthInteger>(_ x: T) -> T {
@@ -574,6 +574,8 @@ struct DwarfReader<S: DwarfSource> {
 
   var rangeListInfo: RangeListInfo?
 
+  @_specialize(kind: full, where S == Elf32Image)
+  @_specialize(kind: full, where S == Elf64Image)
   init(source: Source, shouldSwap: Bool = false) throws {
     // ###TODO: This should be optional, because we can have just line number
     //          information.  We should test that, too.
@@ -1029,8 +1031,7 @@ struct DwarfReader<S: DwarfSource> {
       }
 
       // The actual program comes next
-      let program = ImageSource(parent: cursor.source,
-                                range: cursor.pos..<nextOffset)
+      let program = cursor.source[cursor.pos..<nextOffset]
       cursor.pos = nextOffset
 
       result.append(LineNumberInfo(
