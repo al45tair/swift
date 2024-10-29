@@ -328,7 +328,7 @@ list(APPEND swift_stdlib_compile_flags "-plugin-path" "${swift_lib_dir}/swift/ho
 list(APPEND swift_stdlib_compile_flags "-enable-experimental-feature" "DebugDescriptionMacro")
 
 set(swift_core_incorporate_object_libraries)
-list(APPEND swift_core_incorporate_object_libraries swiftRuntime)
+list(APPEND swift_core_incorporate_object_libraries swiftRuntimeCore)
 list(APPEND swift_core_incorporate_object_libraries swiftLLVMSupport)
 list(APPEND swift_core_incorporate_object_libraries swiftDemangling)
 list(APPEND swift_core_incorporate_object_libraries swiftStdlibStubs)
