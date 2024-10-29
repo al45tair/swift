@@ -22,10 +22,10 @@ import Musl
 import CRT
 #endif
 
-@_spi(Formatting) import _Backtracing
-@_spi(Contexts) import _Backtracing
-@_spi(Registers) import _Backtracing
-@_spi(MemoryReaders) import _Backtracing
+@_spi(Formatting) import Runtime
+@_spi(Contexts) import Runtime
+@_spi(Registers) import Runtime
+@_spi(MemoryReaders) import Runtime
 
 @main
 internal struct SwiftBacktrace {

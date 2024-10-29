@@ -20,10 +20,10 @@
 import Darwin
 import Darwin.Mach
 
-import _Backtracing
-@_spi(Internal) import _Backtracing
-@_spi(Contexts) import _Backtracing
-@_spi(MemoryReaders) import _Backtracing
+import Runtime
+@_spi(Internal) import Runtime
+@_spi(Contexts) import Runtime
+@_spi(MemoryReaders) import Runtime
 
 internal import BacktracingImpl.OS.Darwin
 
