@@ -23,11 +23,11 @@ import Glibc
 import Musl
 #endif
 
-import _Backtracing
-@_spi(Internal) import _Backtracing
-@_spi(Contexts) import _Backtracing
-@_spi(MemoryReaders) import _Backtracing
-@_spi(Utils) import _Backtracing
+import Runtime
+@_spi(Internal) import Runtime
+@_spi(Contexts) import Runtime
+@_spi(MemoryReaders) import Runtime
+@_spi(Utils) import Runtime
 
 internal import Runtime
 
