@@ -100,10 +100,34 @@ public class CachingMemoryReader<Reader: MemoryReader>: MemoryReader {
 @_spi(MemoryReaders)
 public typealias MemserverMemoryReader
   = CachingMemoryReader<UncachedMemserverMemoryReader>
+
+extension CachingMemoryReader where Reader == UncachedMemserverMemoryReader {
+  convenience public init(fd: CInt) {
+    self.init(for: UncachedMemserverMemoryReader(fd: fd))
+  }
+}
 #endif
 
 @_spi(MemoryReaders)
 public typealias RemoteMemoryReader = CachingMemoryReader<UncachedRemoteMemoryReader>
 
+extension CachingMemoryReader where Reader == UncachedRemoteMemoryReader {
+  #if os(macOS)
+  convenience public init(task: Any) {
+    self.init(for: UncachedRemoteMemoryReader(task: task))
+  }
+  #elseif os(Linux)
+  convenience public init(pid: Any) {
+    self.init(for: UncachedRemoteMemoryReader(pid: pid))
+  }
+  #endif
+}
+
 @_spi(MemoryReaders)
 public typealias LocalMemoryReader = CachingMemoryReader<UncachedLocalMemoryReader>
+
+extension CachingMemoryReader where Reader == UncachedLocalMemoryReader {
+  convenience public init() {
+    self.init(for: UncachedLocalMemoryReader())
+  }
+}
