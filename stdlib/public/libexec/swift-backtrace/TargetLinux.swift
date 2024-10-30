@@ -86,7 +86,7 @@ class Target {
     }
   }
 
-  var reader: MemserverMemoryReader>
+  var reader: MemserverMemoryReader
 
   // Get the name of a process
   private static func getProcessName(pid: pid_t) -> String {
@@ -120,7 +120,7 @@ class Target {
     let memserverFd: CInt = 4
 
     pid = getppid()
-    reader = CachingMemoryReader(for: MemserverMemoryReader(fd: memserverFd))
+    reader = MemserverMemoryReader(fd: memserverFd)
     name = Self.getProcessName(pid: pid)
 
     let crashInfo: CrashInfo
