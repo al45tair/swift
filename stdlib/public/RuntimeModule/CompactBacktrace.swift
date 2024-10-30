@@ -321,6 +321,7 @@ enum CompactBacktraceFormat {
         let zeroes = ucount.leadingZeroBitCount >> 3
         let byteCount = 8 - zeroes
         bytes = EightByteBuffer(ucount)
+        state = .emittingBytes(zeroes)
         return byteCount
       }
 
