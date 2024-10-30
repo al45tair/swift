@@ -49,6 +49,11 @@ function(get_test_dependencies SDK result_var_name)
 
   set(deps_binaries)
 
+  if (SWIFT_ENABLE_BACKTRACING)
+    list(APPEND deps_binaries
+      swift-backtrace)
+  endif()
+
   if (SWIFT_INCLUDE_TOOLS)
     list(APPEND deps_binaries
       libMockPlugin
