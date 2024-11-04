@@ -88,30 +88,27 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
 
     if let images = images,
        let imageNdx = images.firstIndex(
-         where: { address >= $0.baseAddress && address < $0.endOfText }
+         where: { address >= MemoryReader.Address($0.baseAddress)!
+                    && address < MemoryReader.Address($0.endOfText)! }
        ) {
-      let relativeAddress = address - MemoryReader.Address(images[imageNdx].baseAddress)
-      let path = images[imageNdx].path
+      let base = MemoryReader.Address(images[imageNdx].baseAddress)!
+      let relativeAddress = address - base
       let cache = ElfImageCache.threadLocal
-      var elf32Image = cache.elf32[path]
-      var elf64Image = cache.elf64[path]
 
-      if elf32Image == nil && elf64Image == nil {
-        if let source = try? ImageSource(path: images[imageNdx].path) {
-          if let elfImage = try? Elf32Image(source: source) {
-            elf32Image = elfImage
-            cache.elf32[path] = elfImage
-          } else if let elfImage = try? Elf64Image(source: source) {
-            elf64Image = elfImage
-            cache.elf64[path] = elfImage
-          }
+      if let hit = cache.lookup(path: images[imageNdx].path) {
+        switch hit {
+          case let .elf32Image(image):
+            if let theSymbol = image.lookupSymbol(
+                 address: Elf32Image.Traits.Address(relativeAddress)
+               ) {
+              return isAsyncSymbol(theSymbol.name)
+            }
+          case let .elf64Image(image):
+            if let theSymbol = image.lookupSymbol(
+                 address: Elf64Image.Traits.Address(relativeAddress)) {
+              return isAsyncSymbol(theSymbol.name)
+            }
         }
-      }
-
-      if let theSymbol = elf32Image?.lookupSymbol(address: relativeAddress) {
-        return isAsyncSymbol(theSymbol.name)
-      } else if let theSymbol = elf64Image?.lookupSymbol(address: relativeAddress) {
-        return isAsyncSymbol(theSymbol.name)
       }
     }
     #endif
