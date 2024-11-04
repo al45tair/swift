@@ -30,7 +30,6 @@ internal import Glibc
 #elseif canImport(Musl)
 internal import Musl
 #endif
-internal import BacktracingImpl.Runtime
 
 /// A symbolicated backtrace
 public struct SymbolicatedBacktrace: CustomStringConvertible {
@@ -455,109 +454,92 @@ public struct SymbolicatedBacktrace: CustomStringConvertible {
       }
     }
     #elseif os(Linux)
-    var cache = ElfImageCache.threadLocal
+    let cache = ElfImageCache.threadLocal
 
     // This could be more efficient; at the moment we execute the line
     // number programs once per frame, whereas we could just run them once
     // for all the addresses we're interested in.
 
     for frame in backtrace.frames {
-      let address = ImageSource.Address(frame.adjustedProgramCounter)
+      let address = frame.adjustedProgramCounter
       if let imageNdx = theImages.firstIndex(
-           where: { address >= $0.baseAddress
-                      && address < $0.endOfText }
+           where: { address >= $0.baseAddress && address < $0.endOfText }
          ) {
-        let relativeAddress = address - ImageSource.Address(theImages[imageNdx].baseAddress)
+        let relativeAddress = ImageSource.Address(
+          address - theImages[imageNdx].baseAddress
+        )
+        let name = theImages[imageNdx].name ?? "<unknown>"
         var symbol: Symbol = Symbol(imageIndex: imageNdx,
-                                    imageName: theImages[imageNdx].name,
+                                    imageName: name,
                                     rawName: "<unknown>",
                                     offset: 0,
                                     sourceLocation: nil)
-        var elf32Image = cache.elf32[theImages[imageNdx].path]
-        var elf64Image = cache.elf64[theImages[imageNdx].path]
 
-        if elf32Image == nil && elf64Image == nil {
-          if let source = try? ImageSource(path: theImages[imageNdx].path) {
-            if let elfImage = try? Elf32Image(source: source) {
-              elf32Image = elfImage
-              elf32Cache[imageNdx] = elfImage
-            } else if let elfImage = try? Elf64Image(source: source) {
-              elf64Image = elfImage
-              elf64Cache[imageNdx] = elfImage
+        func lookupSymbol<ElfImage: ElfSymbolLookupProtocol>(
+          image: ElfImage?,
+          at imageNdx: Int,
+          named name: String,
+          address imageAddr: ImageSource.Address
+        ) -> Symbol? {
+          let address = ElfImage.Traits.Address(imageAddr)
+
+          guard let image = image else {
+            return nil
+          }
+          guard let theSymbol = image.lookupSymbol(address: address) else {
+            return nil
+          }
+
+          var location: SourceLocation?
+
+          if options.contains(.showSourceLocations)
+               || options.contains(.showInlineFrames) {
+            location = try? image.sourceLocation(for: address)
+          } else {
+            location = nil
+          }
+
+          if options.contains(.showInlineFrames) {
+            for inline in image.inlineCallSites(at: address) {
+              let fakeSymbol = Symbol(imageIndex: imageNdx,
+                                      imageName: name,
+                                      rawName: inline.rawName ?? "<unknown>",
+                                      offset: 0,
+                                      sourceLocation: location)
+              frames.append(Frame(captured: frame,
+                                  symbol: fakeSymbol,
+                                  inlined: true))
+
+              location = SourceLocation(path: inline.filename,
+                                        line: inline.line,
+                                        column: inline.column)
             }
           }
+
+          return Symbol(imageIndex: imageNdx,
+                        imageName: name,
+                        rawName: theSymbol.name,
+                        offset: theSymbol.offset,
+                        sourceLocation: location)
         }
 
-        if let theSymbol = elf32Image?.lookupSymbol(address: relativeAddress) {
-          var location: SourceLocation?
-
-          if options.contains(.showSourceLocations)
-               || options.contains(.showInlineFrames) {
-            location = try? elf32Image!.sourceLocation(for: relativeAddress)
-          } else {
-            location = nil
+        if let hit = cache.lookup(path: theImages[imageNdx].path) {
+          switch hit {
+            case let .elf32Image(image):
+              if let theSymbol = lookupSymbol(image: image,
+                                              at: imageNdx,
+                                              named: name,
+                                              address: relativeAddress) {
+                symbol = theSymbol
+              }
+            case let .elf64Image(image):
+              if let theSymbol = lookupSymbol(image: image,
+                                              at: imageNdx,
+                                              named: name,
+                                              address: relativeAddress) {
+                symbol = theSymbol
+              }
           }
-
-          if options.contains(.showInlineFrames) {
-            for inline in elf32Image!.inlineCallSites(at: relativeAddress) {
-              let fakeSymbol = Symbol(imageIndex: imageNdx,
-                                      imageName: theImages[imageNdx].name,
-                                      rawName: inline.rawName ?? "<unknown>",
-                                      offset: 0,
-                                      sourceLocation: location)
-              frames.append(Frame(captured: frame,
-                                  symbol: fakeSymbol,
-                                  inlined: true))
-
-              location = SourceLocation(path: inline.filename,
-                                        line: inline.line,
-                                        column: inline.column)
-            }
-          }
-
-          symbol = Symbol(imageIndex: imageNdx,
-                          imageName: theImages[imageNdx].name,
-                          rawName: theSymbol.name,
-                          offset: theSymbol.offset,
-                          sourceLocation: location)
-        } else if let theSymbol = elf64Image?.lookupSymbol(address: relativeAddress) {
-          var location: SourceLocation?
-
-          if options.contains(.showSourceLocations)
-               || options.contains(.showInlineFrames) {
-            location = try? elf64Image!.sourceLocation(for: relativeAddress)
-          } else {
-            location = nil
-          }
-
-          if options.contains(.showInlineFrames) {
-            for inline in elf64Image!.inlineCallSites(at: relativeAddress) {
-              let fakeSymbol = Symbol(imageIndex: imageNdx,
-                                      imageName: theImages[imageNdx].name,
-                                      rawName: inline.rawName ?? "<unknown>",
-                                      offset: 0,
-                                      sourceLocation: location)
-              frames.append(Frame(captured: frame,
-                                  symbol: fakeSymbol,
-                                  inlined: true))
-
-              location = SourceLocation(path: inline.filename,
-                                        line: inline.line,
-                                        column: inline.column)
-            }
-          }
-
-          symbol = Symbol(imageIndex: imageNdx,
-                          imageName: theImages[imageNdx].name,
-                          rawName: theSymbol.name,
-                          offset: theSymbol.offset,
-                          sourceLocation: location)
-        } else {
-          symbol = Symbol(imageIndex: imageNdx,
-                          imageName: theImages[imageNdx].name,
-                          rawName: "<unknown>",
-                          offset: 0,
-                          sourceLocation: nil)
         }
 
         frames.append(Frame(captured: frame, symbol: symbol))

@@ -39,10 +39,12 @@ set(RUNTIME_SOURCES
   FramePointerUnwinder.swift
   Image.swift
   ImageSource.swift
+  Libc.swift
   LimitSequence.swift
   MemoryReader.swift
   ProcMapsScanner.swift
   Registers.swift
+  Runtime.swift
   RichFrame.swift
   SymbolicatedBacktrace.swift
   Utils.swift
@@ -52,6 +54,7 @@ set(RUNTIME_SOURCES
 )
 
 set(RUNTIME_COMPILE_FLAGS
+  "-cxx-interoperability-mode=default"
   "-Xfrontend;-experimental-spi-only-imports"
   "-Xcc;-I${SWIFT_SOURCE_DIR}/include"
   "-Xcc;-I${CMAKE_BINARY_DIR}/include"

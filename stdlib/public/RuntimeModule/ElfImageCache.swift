@@ -39,12 +39,39 @@ final class ElfImageCache {
     elf64 = [:]
   }
 
+  enum Result {
+    case elf32Image(Elf32Image)
+    case elf64Image(Elf64Image)
+  }
+  func lookup(path: String?) -> Result? {
+    guard let path = path else {
+      return nil
+    }
+    if let image = elf32[path] {
+      return .elf32Image(image)
+    }
+    if let image = elf64[path] {
+      return .elf64Image(image)
+    }
+    if let source = try? ImageSource(path: path) {
+      if let elfImage = try? Elf32Image(source: source) {
+        elf32[path] = elfImage
+        return .elf32Image(elfImage)
+      }
+      if let elfImage = try? Elf64Image(source: source) {
+        elf64[path] = elfImage
+        return .elf64Image(elfImage)
+      }
+    }
+    return nil
+  }
+
   private static var key: pthread_key_t? = {
     var theKey = pthread_key_t()
     let err = pthread_key_create(
       &theKey,
       { rawPtr in
-        let ptr = Unmanaged<ElfImageCache>.fromOpaque(rawPtr)
+        let ptr = Unmanaged<ElfImageCache>.fromOpaque(notOptional(rawPtr))
         ptr.release()
       }
     )
