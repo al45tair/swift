@@ -95,3 +95,15 @@ public func stripWhitespace<S: StringProtocol>(_ s: S)
   let lastNonWhitespace = s.lastIndex(where: { !$0.isWhitespace })!
   return s[firstNonWhitespace...lastNonWhitespace]
 }
+
+/// Strip any Optional from a value.
+///
+/// This is useful when interfacing with the system C library, because some
+/// C libraries have nullability annotations while others do not.
+func notOptional<T>(_ optional: T?) -> T {
+  return optional!
+}
+
+func notOptional<T>(_ value: T) -> T {
+  return value
+}

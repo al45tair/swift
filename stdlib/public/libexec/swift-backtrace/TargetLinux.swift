@@ -29,8 +29,6 @@ import Runtime
 @_spi(MemoryReaders) import Runtime
 @_spi(Utils) import Runtime
 
-internal import Runtime
-
 enum SomeBacktrace {
   case raw(Backtrace)
   case symbolicated(SymbolicatedBacktrace)
@@ -174,34 +172,34 @@ class Target {
       let backtrace = try Backtrace.capture(from: context,
                                             using: reader,
                                             images: images,
+                                            algorithm: .auto,
                                             limit: limit,
+                                            offset: 0,
                                             top: top)
 
       let shouldSymbolicate: Bool
-      let showInlineFrames: Bool
-      let showSourceLocations: Bool
+      var options: Backtrace.SymbolicationOptions
       switch symbolicate {
         case .off:
           shouldSymbolicate = false
-          showInlineFrames = false
-          showSourceLocations = false
+          options = []
         case .fast:
           shouldSymbolicate = true
-          showInlineFrames = false
-          showSourceLocations = false
+          options = [ .showSourceLocations ]
         case .full:
           shouldSymbolicate = true
-          showInlineFrames = true
-          showSourceLocations = true
+          options = [ .showInlineFrames, .showSourceLocations ]
+      }
+
+      if cache {
+        options.insert(.useSymbolCache)
       }
 
       if shouldSymbolicate {
-        guard let symbolicated
-                = backtrace.symbolicated(with: images,
-                                         sharedCacheInfo: nil,
-                                         showInlineFrames: showInlineFrames,
-                                         showSourceLocations: showSourceLocations,
-                                         useSymbolCache: cache) else {
+        guard let symbolicated = backtrace.symbolicated(
+                with: images,
+                options: options
+              ) else {
           print("unable to symbolicate backtrace for thread \(t.tid)")
           exit(1)
         }
@@ -245,37 +243,37 @@ class Target {
       guard let backtrace = try? Backtrace.capture(from: context,
                                                    using: reader,
                                                    images: images,
+                                                   algorithm: .auto,
                                                    limit: limit,
+                                                   offset: 0,
                                                    top: top) else {
         print("unable to capture backtrace from context for thread \(ndx)")
         continue
       }
 
       let shouldSymbolicate: Bool
-      let showInlineFrames: Bool
-      let showSourceLocations: Bool
+      var options: Backtrace.SymbolicationOptions
       switch symbolicate {
         case .off:
           shouldSymbolicate = false
-          showInlineFrames = false
-          showSourceLocations = false
+          options = []
         case .fast:
           shouldSymbolicate = true
-          showInlineFrames = false
-          showSourceLocations = false
+          options = [ .showSourceLocations ]
         case .full:
           shouldSymbolicate = true
-          showInlineFrames = true
-          showSourceLocations = true
+          options = [ .showInlineFrames, .showSourceLocations ]
+      }
+
+      if cache {
+        options.insert(.useSymbolCache)
       }
 
       if shouldSymbolicate {
         guard let symbolicated = backtrace.symbolicated(
                 with: images,
-                sharedCacheInfo: nil,
-                showInlineFrames: showInlineFrames,
-                showSourceLocations: showSourceLocations,
-                useSymbolCache: cache) else {
+                options: options
+              ) else {
           print("unable to symbolicate backtrace from context for thread \(ndx)")
           continue
         }

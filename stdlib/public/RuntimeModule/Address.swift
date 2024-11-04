@@ -51,6 +51,10 @@ extension Backtrace.Address: Comparable {
 extension Backtrace.Address: LosslessStringConvertible {
   /// Create an Backtrace.Address from its string representation
   public init?(_ s: String) {
+    self.init(s[...])
+  }
+
+  public init?(_ s: Substring) {
     let unprefixed: Substring
 
     // Explicit support for null

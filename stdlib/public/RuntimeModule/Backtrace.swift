@@ -515,7 +515,7 @@ extension Backtrace {
 
 // -- Linux ------------------------------------------------------------------
 
-#if os(linux)
+#if os(Linux)
 extension Backtrace {
   private struct AddressRange {
     var low: Address = 0
@@ -526,8 +526,10 @@ extension Backtrace {
   @_specialize(exported: true, kind: full, where M == UnsafeLocalMemoryReader)
   @_specialize(exported: true, kind: full, where M == RemoteMemoryReader)
   @_specialize(exported: true, kind: full, where M == LocalMemoryReader)
-  public static func captureImages<M: MemoryReader>(using reader: M,
-                                                    forProcess pid: Int? = nil) -> [Image] {
+  public static func captureImages<M: MemoryReader>(
+    using reader: M,
+    forProcess pid: Int? = nil
+  ) -> [Image] {
     var images: [Image] = []
 
     let path: String
@@ -548,8 +550,8 @@ extension Backtrace {
       if match.inode == "0" || path == "" {
         continue
       }
-      guard let start = Address(match.start, radix: 16),
-            let end = Address(match.end, radix: 16) else {
+      guard let start = Address(match.start),
+            let end = Address(match.end) else {
         continue
       }
 
@@ -573,7 +575,7 @@ extension Backtrace {
       }
 
       // Inspect the image and extract the UUID and end of text
-      guard let (endOfText, uuid) = getElfImageInfo(at: range.low,
+      guard let (endOfText, uuid) = getElfImageInfo(at: M.Address(range.low)!,
                                                     using: reader) else {
         // Not an ELF iamge
         continue
@@ -581,9 +583,9 @@ extension Backtrace {
 
       let image = Image(name: String(name),
                         path: String(path),
-                        buildID: uuid,
+                        uniqueID: uuid,
                         baseAddress: range.low,
-                        endOfText: endOfText)
+                        endOfText: Address(endOfText))
 
       images.append(image)
     }
