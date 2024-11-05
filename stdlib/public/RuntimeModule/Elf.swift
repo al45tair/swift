@@ -81,104 +81,106 @@ let ELFMAG2 = swift.runtime.ELFMAG2
 let ELFMAG3 = swift.runtime.ELFMAG3
 
 typealias Elf_Ehdr_Class = swift.runtime.Elf_Ehdr_Class
-typealias Elf_Ehdr_Data = swift.runtime.Elf_Ehdr_Data
+typealias Elf_Ehdr_Data  = swift.runtime.Elf_Ehdr_Data
 typealias Elf_Ehdr_OsAbi = swift.runtime.Elf_Ehdr_OsAbi
 
-let SHN_UNDEF = swift.runtime.SHN_UNDEF
+let SHN_UNDEF     = swift.runtime.SHN_UNDEF
 let SHN_LORESERVE = swift.runtime.SHN_LORESERVE
-let SHN_LOPROC = swift.runtime.SHN_LOPROC
-let SHN_HIPROC = swift.runtime.SHN_HIPROC
-let SHN_LOOS = swift.runtime.SHN_LOOS
-let SHN_HIOS = swift.runtime.SHN_HIOS
-let SHN_ABS = swift.runtime.SHN_ABS
-let SHN_COMMON = swift.runtime.SHN_COMMON
-let SHN_XINDEX = swift.runtime.SHN_XINDEX
+let SHN_LOPROC    = swift.runtime.SHN_LOPROC
+let SHN_HIPROC    = swift.runtime.SHN_HIPROC
+let SHN_LOOS      = swift.runtime.SHN_LOOS
+let SHN_HIOS      = swift.runtime.SHN_HIOS
+let SHN_ABS       = swift.runtime.SHN_ABS
+let SHN_COMMON    = swift.runtime.SHN_COMMON
+let SHN_XINDEX    = swift.runtime.SHN_XINDEX
 let SHN_HIRESERVE = swift.runtime.SHN_HIRESERVE
 
 typealias Elf_Shdr_Type = swift.runtime.Elf_Shdr_Type
 
-let SHF_WRITE = swift.runtime.SHF_WRITE
-let SHF_ALLOC = swift.runtime.SHF_ALLOC
-let SHF_EXECINSTR = swift.runtime.SHF_EXECINSTR
-let SHF_MERGE = swift.runtime.SHF_MERGE
-let SHF_STRINGS = swift.runtime.SHF_STRINGS
-let SHF_INFO_LINK = swift.runtime.SHF_INFO_LINK
-let SHF_LINK_ORDER = swift.runtime.SHF_LINK_ORDER
+let SHF_WRITE            = swift.runtime.SHF_WRITE
+let SHF_ALLOC            = swift.runtime.SHF_ALLOC
+let SHF_EXECINSTR        = swift.runtime.SHF_EXECINSTR
+let SHF_MERGE            = swift.runtime.SHF_MERGE
+let SHF_STRINGS          = swift.runtime.SHF_STRINGS
+let SHF_INFO_LINK        = swift.runtime.SHF_INFO_LINK
+let SHF_LINK_ORDER       = swift.runtime.SHF_LINK_ORDER
 let SHF_OS_NONCONFORMING = swift.runtime.SHF_OS_NONCONFORMING
-let SHF_GROUP = swift.runtime.SHF_GROUP
-let SHF_TLS = swift.runtime.SHF_TLS
-let SHF_COMPRESSED = swift.runtime.SHF_COMPRESSED
-let SHF_MASKOS = swift.runtime.SHF_MASKOS
-let SHF_MASKPROC = swift.runtime.SHF_MASKPROC
+let SHF_GROUP            = swift.runtime.SHF_GROUP
+let SHF_TLS              = swift.runtime.SHF_TLS
+let SHF_COMPRESSED       = swift.runtime.SHF_COMPRESSED
+let SHF_MASKOS           = swift.runtime.SHF_MASKOS
+let SHF_MASKPROC         = swift.runtime.SHF_MASKPROC
 
-let GRP_COMDAT = swift.runtime.GRP_COMDAT
-let GRP_MASKOS = swift.runtime.GRP_MASKOS
+let GRP_COMDAT   = swift.runtime.GRP_COMDAT
+let GRP_MASKOS   = swift.runtime.GRP_MASKOS
 let GRP_MASKPROC = swift.runtime.GRP_MASKPROC
 
 typealias Elf_Chdr_Type = swift.runtime.Elf_Chdr_Type
 
-typealias Elf_Sym_Binding = swift.runtime.Elf_Sym_Binding
-typealias Elf_Sym_Type = swift.runtime.Elf_Sym_Type
+typealias Elf_Sym_Binding    = swift.runtime.Elf_Sym_Binding
+typealias Elf_Sym_Type       = swift.runtime.Elf_Sym_Type
 typealias Elf_Sym_Visibility = swift.runtime.Elf_Sym_Visibility
 
-typealias Elf_Phdr_Type = swift.runtime.Elf_Phdr_Type
+typealias Elf_Phdr_Type  = swift.runtime.Elf_Phdr_Type
 typealias Elf_Phdr_Flags = swift.runtime.Elf_Phdr_Flags
 
 let PF_X = swift.runtime.PF_X
 let PF_W = swift.runtime.PF_W
 let PF_R = swift.runtime.PF_R
 
-let PF_MASKOS = swift.runtime.PF_MASKOS
+let PF_MASKOS   = swift.runtime.PF_MASKOS
 let PF_MASKPROC = swift.runtime.PF_MASKPROC
 
-let DT_NULL = swift.runtime.DT_NULL
-let DT_NEEDED = swift.runtime.DT_NEEDED
-let DT_PLTRELSZ = swift.runtime.DT_PLTRELSZ
-let DT_PLTGOT = swift.runtime.DT_PLTGOT
-let DT_HASH = swift.runtime.DT_HASH
-let DT_STRTAB = swift.runtime.DT_STRTAB
-let DT_SYMTAB = swift.runtime.DT_SYMTAB
-let DT_RELA = swift.runtime.DT_RELA
-let DT_RELASZ = swift.runtime.DT_RELASZ
-let DT_RELAENT = swift.runtime.DT_RELAENT
-let DT_STRSZ = swift.runtime.DT_STRSZ
-let DT_SYMENT = swift.runtime.DT_SYMENT
-let DT_INIT = swift.runtime.DT_INIT
-let DT_FINI = swift.runtime.DT_FINI
-let DT_SONAME = swift.runtime.DT_SONAME
-let DT_RPATH = swift.runtime.DT_RPATH
-let DT_SYMBOLIC = swift.runtime.DT_SYMBOLIC
-let DT_REL = swift.runtime.DT_REL
-let DT_RELSZ = swift.runtime.DT_RELSZ
-let DT_RELENT = swift.runtime.DT_RELENT
-let DT_PLTREL = swift.runtime.DT_PLTREL
-let DT_DEBUG = swift.runtime.DT_DEBUG
-let DT_TEXTREL = swift.runtime.DT_TEXTREL
-let DT_JMPREL = swift.runtime.DT_JMPREL
-let DT_BIND_NOW = swift.runtime.DT_BIND_NOW
-let DT_INIT_ARRAY = swift.runtime.DT_INIT_ARRAY
-let DT_FINI_ARRAY = swift.runtime.DT_FINI_ARRAY
-let DT_INIT_ARRAYSZ = swift.runtime.DT_INIT_ARRAYSZ
-let DT_FINI_ARRAYSZ = swift.runtime.DT_FINI_ARRAYSZ
-let DT_RUNPATH = swift.runtime.DT_RUNPATH
-let DT_FLAGS = swift.runtime.DT_FLAGS
-
-let DT_ENCODING = swift.runtime.DT_ENCODING
-
-let DT_PREINIT_ARRAY = swift.runtime.DT_PREINIT_ARRAY
+let DT_NULL            = swift.runtime.DT_NULL
+let DT_NEEDED          = swift.runtime.DT_NEEDED
+let DT_PLTRELSZ        = swift.runtime.DT_PLTRELSZ
+let DT_PLTGOT          = swift.runtime.DT_PLTGOT
+let DT_HASH            = swift.runtime.DT_HASH
+let DT_STRTAB          = swift.runtime.DT_STRTAB
+let DT_SYMTAB          = swift.runtime.DT_SYMTAB
+let DT_RELA            = swift.runtime.DT_RELA
+let DT_RELASZ          = swift.runtime.DT_RELASZ
+let DT_RELAENT         = swift.runtime.DT_RELAENT
+let DT_STRSZ           = swift.runtime.DT_STRSZ
+let DT_SYMENT          = swift.runtime.DT_SYMENT
+let DT_INIT            = swift.runtime.DT_INIT
+let DT_FINI            = swift.runtime.DT_FINI
+let DT_SONAME          = swift.runtime.DT_SONAME
+let DT_RPATH           = swift.runtime.DT_RPATH
+let DT_SYMBOLIC        = swift.runtime.DT_SYMBOLIC
+let DT_REL             = swift.runtime.DT_REL
+let DT_RELSZ           = swift.runtime.DT_RELSZ
+let DT_RELENT          = swift.runtime.DT_RELENT
+let DT_PLTREL          = swift.runtime.DT_PLTREL
+let DT_DEBUG           = swift.runtime.DT_DEBUG
+let DT_TEXTREL         = swift.runtime.DT_TEXTREL
+let DT_JMPREL          = swift.runtime.DT_JMPREL
+let DT_BIND_NOW        = swift.runtime.DT_BIND_NOW
+let DT_INIT_ARRAY      = swift.runtime.DT_INIT_ARRAY
+let DT_FINI_ARRAY      = swift.runtime.DT_FINI_ARRAY
+let DT_INIT_ARRAYSZ    = swift.runtime.DT_INIT_ARRAYSZ
+let DT_FINI_ARRAYSZ    = swift.runtime.DT_FINI_ARRAYSZ
+let DT_RUNPATH         = swift.runtime.DT_RUNPATH
+let DT_FLAGS           = swift.runtime.DT_FLAGS
+let DT_ENCODING        = swift.runtime.DT_ENCODING
+let DT_PREINIT_ARRAY   = swift.runtime.DT_PREINIT_ARRAY
 let DT_PREINIT_ARRAYSZ = swift.runtime.DT_PREINIT_ARRAYSZ
+let DT_LOOS            = swift.runtime.DT_LOOS
+let DT_HIOS            = swift.runtime.DT_HIOS
+let DT_LOPROC          = swift.runtime.DT_LOPROC
+let DT_HIPROC          = swift.runtime.DT_HIPROC
 
-let DT_LOOS = swift.runtime.DT_LOOS
-let DT_HIOS = swift.runtime.DT_HIOS
-
-let DT_LOPROC = swift.runtime.DT_LOPROC
-let DT_HIPROC = swift.runtime.DT_HIPROC
-
-let DF_ORIGIN = swift.runtime.DF_ORIGIN
-let DF_SYMBOLIC = swift.runtime.DF_SYMBOLIC
-let DF_TEXTREL = swift.runtime.DF_TEXTREL
-let DF_BIND_NOW = swift.runtime.DF_BIND_NOW
+let DF_ORIGIN     = swift.runtime.DF_ORIGIN
+let DF_SYMBOLIC   = swift.runtime.DF_SYMBOLIC
+let DF_TEXTREL    = swift.runtime.DF_TEXTREL
+let DF_BIND_NOW   = swift.runtime.DF_BIND_NOW
 let DF_STATIC_TLS = swift.runtime.DF_STATIC_TLS
+
+let NT_GNU_ABI_TAG         = swift.runtime.NT_GNU_ABI_TAG
+let NT_GNU_HWCAP           = swift.runtime.NT_GNU_HWCAP
+let NT_GNU_BUILD_ID        = swift.runtime.NT_GNU_BUILD_ID
+let NT_GNU_GOLD_VERSION    = swift.runtime.NT_GNU_GOLD_VERSION
+let NT_GNU_PROPERTY_TYPE_0 = swift.runtime.NT_GNU_PROPERTY_TYPE_0
 
 typealias Elf32_Ehdr = swift.runtime.Elf32_Ehdr
 typealias Elf64_Ehdr = swift.runtime.Elf64_Ehdr
@@ -192,31 +194,34 @@ typealias Elf64_Chdr = swift.runtime.Elf64_Chdr
 typealias Elf32_Sym = swift.runtime.Elf32_Sym
 typealias Elf64_Sym = swift.runtime.Elf64_Sym
 
-let ELF32_ST_BIND = swift.runtime.ELF32_ST_BIND
-let ELF32_ST_TYPE = swift.runtime.ELF32_ST_TYPE
-let ELF32_ST_INFO = swift.runtime.ELF32_ST_INFO
+let ELF32_ST_BIND       = swift.runtime.ELF32_ST_BIND
+let ELF32_ST_TYPE       = swift.runtime.ELF32_ST_TYPE
+let ELF32_ST_INFO       = swift.runtime.ELF32_ST_INFO
 let ELF32_ST_VISIBILITY = swift.runtime.ELF32_ST_VISIBILITY
 
-let ELF64_ST_BIND = swift.runtime.ELF64_ST_BIND
-let ELF64_ST_TYPE = swift.runtime.ELF64_ST_TYPE
-let ELF64_ST_INFO = swift.runtime.ELF64_ST_INFO
+let ELF64_ST_BIND       = swift.runtime.ELF64_ST_BIND
+let ELF64_ST_TYPE       = swift.runtime.ELF64_ST_TYPE
+let ELF64_ST_INFO       = swift.runtime.ELF64_ST_INFO
 let ELF64_ST_VISIBILITY = swift.runtime.ELF64_ST_VISIBILITY
 
-typealias Elf32_Rel = swift.runtime.Elf32_Rel
+typealias Elf32_Rel  = swift.runtime.Elf32_Rel
 typealias Elf32_Rela = swift.runtime.Elf32_Rela
-typealias Elf64_Rel = swift.runtime.Elf64_Rel
+typealias Elf64_Rel  = swift.runtime.Elf64_Rel
 typealias Elf64_Rela = swift.runtime.Elf64_Rela
 
-let ELF32_R_SYM = swift.runtime.ELF32_R_SYM
+let ELF32_R_SYM  = swift.runtime.ELF32_R_SYM
 let ELF32_R_TYPE = swift.runtime.ELF32_R_TYPE
 let ELF32_R_INFO = swift.runtime.ELF32_R_INFO
 
-let ELF64_R_SYM = swift.runtime.ELF64_R_SYM
+let ELF64_R_SYM  = swift.runtime.ELF64_R_SYM
 let ELF64_R_TYPE = swift.runtime.ELF64_R_TYPE
 let ELF64_R_INFO = swift.runtime.ELF64_R_INFO
 
 typealias Elf32_Phdr = swift.runtime.Elf32_Phdr
 typealias Elf64_Phdr = swift.runtime.Elf64_Phdr
+
+typealias Elf32_Nhdr = swift.runtime.Elf32_Nhdr
+typealias Elf64_Nhdr = swift.runtime.Elf64_Nhdr
 
 typealias Elf32_Dyn = swift.runtime.Elf32_Dyn
 typealias Elf64_Dyn = swift.runtime.Elf64_Dyn

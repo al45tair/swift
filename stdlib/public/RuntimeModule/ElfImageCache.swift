@@ -71,7 +71,9 @@ final class ElfImageCache {
     let err = pthread_key_create(
       &theKey,
       { rawPtr in
-        let ptr = Unmanaged<ElfImageCache>.fromOpaque(notOptional(rawPtr))
+        let ptr = Unmanaged<ElfImageCache>.fromOpaque(
+          notMutable(notOptional(rawPtr))
+        )
         ptr.release()
       }
     )
