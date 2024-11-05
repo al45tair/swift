@@ -29,6 +29,7 @@ internal import Glibc
 internal import Musl
 #endif
 internal import BacktracingImpl.ImageFormats.Elf
+internal import BacktracingImpl.Runtime
 
 // .. Use *our* Elf definitions ................................................
 
@@ -1952,7 +1953,7 @@ func getElfImageInfo<R: MemoryReader, Traits: ElfTraits>(
                                    + ImageSource.Size(phdr.p_memsz))
     }
     if phdr.p_type == .PT_NOTE {
-      var noteAddr = ImageSource.Address(phdr.p_vaddr)
+      var noteAddr = address + ImageSource.Address(phdr.p_vaddr)
       let noteEnd = noteAddr + ImageSource.Size(phdr.p_memsz)
 
       while noteAddr < noteEnd {
@@ -1973,8 +1974,8 @@ func getElfImageInfo<R: MemoryReader, Traits: ElfTraits>(
         // Test if this is a "GNU" NT_GNU_BUILD_ID note
         if nameLen == 3 {
           let byte0 = try reader.fetch(from: noteAddr, as: UInt8.self)
-          let byte1 = try reader.fetch(from: noteAddr, as: UInt8.self)
-          let byte2 = try reader.fetch(from: noteAddr, as: UInt8.self)
+          let byte1 = try reader.fetch(from: noteAddr + 1, as: UInt8.self)
+          let byte2 = try reader.fetch(from: noteAddr + 2, as: UInt8.self)
 
           if byte0 == 0x47 && byte1 == 0x4e && byte2 == 0x55 &&
                UInt32(nhdr.n_type) == NT_GNU_BUILD_ID {

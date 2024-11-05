@@ -62,8 +62,19 @@ struct ImageSource {
       guard case let .allocated(count) = kind else {
         fatalError("attempted to get mutable reference to immutable ImageSource")
       }
-      return UnsafeMutableRawBufferPointer(mutating:
-                                             UnsafeRawBufferPointer(rebasing: bytes[0..<count]))
+      return UnsafeMutableRawBufferPointer(
+        mutating: UnsafeRawBufferPointer(rebasing: bytes[0..<count])
+      )
+    }
+
+    /// Gets a mutable pointer to the unused space
+    var unusedBytes: UnsafeMutableRawBufferPointer {
+      guard case let .allocated(count) = kind else {
+        fatalError("attempted to get mutable reference to immutable ImageSource")
+      }
+      return UnsafeMutableRawBufferPointer(
+        mutating: UnsafeRawBufferPointer(rebasing: bytes[count...])
+      )
     }
 
     /// Return the number of bytes in this ImageSource
@@ -174,10 +185,11 @@ struct ImageSource {
           oldPart.copyMemory(from: bytes)
           mutableBytes.deallocate()
           kind = .allocated(count)
-          bytes = UnsafeRawBufferPointer(newBuffer)
         default:
           fatalError("Cannot resize immutable image source storage")
       }
+
+      bytes = UnsafeRawBufferPointer(newBuffer)
 
       return newBuffer
     }
@@ -214,9 +226,30 @@ struct ImageSource {
       return resize(newSize: capacity + increment)
     }
 
+    /// Mark a number of bytes in the mutable buffer as in use.  This is
+    /// used when passing `unusedBytes` to some other code that fills in
+    /// part of the buffer.
+    func used(bytes: Int) {
+      guard bytes >= 0 else {
+        fatalError("Bytes should not be less than zero")
+      }
+      guard case let .allocated(count) = kind else {
+        fatalError("Cannot append to immutable image source storage")
+      }
+      guard mutableBytes.count - count <= bytes else {
+        fatalError("Buffer overrun detected")
+      }
+      kind = .allocated(count + bytes)
+    }
+
     /// Append bytes to the mutable buffer; this is only supported for
     /// allocated or empty storage.
     func append(bytes toAppend: UnsafeRawBufferPointer) {
+      // Short circuit, otherwise we get in a muddle in requireAtLeast()
+      if toAppend.count == 0 {
+        return
+      }
+
       let newCount = count + toAppend.count
 
       let mutableBytes = requireAtLeast(byteCount: newCount)
@@ -236,11 +269,17 @@ struct ImageSource {
   /// The storage holding the image data.
   private var storage: Storage
 
+  /// The number of bytes of data this ImageSource holds.
+  var count: Int { return storage.count }
+
   /// The memory holding the image data.
   var bytes: UnsafeRawBufferPointer { return storage.bytes }
 
   /// A mutable refernece to the image data (only for allocated storage)
   var mutableBytes: UnsafeMutableRawBufferPointer { return storage.mutableBytes }
+
+  /// A mutable reference to unused bytes in the storage
+  var unusedBytes: UnsafeMutableRawBufferPointer { return storage.unusedBytes }
 
   /// Says whether we are looking at a loaded (i.e. with ld.so or dyld) image.
   private(set) var isMappedImage: Bool
@@ -292,6 +331,11 @@ struct ImageSource {
                        path: path)
   }
 
+  /// Mark unused bytes in the storage as used
+  func used(bytes: Int) {
+    storage.used(bytes: bytes)
+  }
+
   /// Append bytes to an empty or allocated storage
   func append(bytes toAppend: UnsafeRawBufferPointer) {
     storage.append(bytes: toAppend)
@@ -304,7 +348,7 @@ extension ImageSource: MemoryReader {
                     into buffer: UnsafeMutableRawBufferPointer) throws {
     let offset = Int(address)
     guard bytes.count >= buffer.count &&
-            offset < bytes.count - buffer.count else {
+            offset <= bytes.count - buffer.count else {
       throw ImageSourceError.outOfBoundsRead
     }
     buffer.copyMemory(from: UnsafeRawBufferPointer(
@@ -314,7 +358,7 @@ extension ImageSource: MemoryReader {
   public func fetch<T>(from address: Address, as type: T.Type) throws -> T {
     let size = MemoryLayout<T>.size
     let offset = Int(address)
-    guard offset < bytes.count - size else {
+    guard offset <= bytes.count - size else {
       throw ImageSourceError.outOfBoundsRead
     }
     return bytes.loadUnaligned(fromByteOffset: offset, as: type)

@@ -23,8 +23,7 @@
 #include "swift/Runtime/CrashInfo.h"
 
 #ifdef __cplusplus
-namespace swift {
-namespace runtime {
+extern "C" {
 #endif
 
 // Can't import swift/Runtime/Debug.h because it assumes C++
@@ -40,8 +39,7 @@ char *_swift_backtrace_demangle(const char *rawName,
                                 size_t *outputBufferSize);
 
 #ifdef __cplusplus
-} // namespace runtime
-} // namespace swift
+}
 #endif
 
 #endif // SWIFT_BACKTRACING_RUNTIME_H

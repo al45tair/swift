@@ -18,6 +18,7 @@
 import Swift
 
 internal import BacktracingImpl.ImageFormats.Dwarf
+internal import BacktracingImpl.Runtime
 
 // .. Use *our* Dwarf definitions ..............................................
 

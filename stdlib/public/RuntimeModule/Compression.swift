@@ -322,9 +322,9 @@ fileprivate func decompress<S: CompressedStream>(
   stream: S,
   source: ImageSource,
   offset: Int,
-  output: ImageSource
+  output: inout ImageSource
 ) throws {
-  _ = try stream.decompress(
+  let totalBytes = try stream.decompress(
     input: {
       () throws -> UnsafeRawBufferPointer in
 
@@ -334,19 +334,20 @@ fileprivate func decompress<S: CompressedStream>(
       (used: UInt, done: Bool) throws -> UnsafeMutableRawBufferPointer? in
 
       if used == 0 {
-        return output.mutableBytes
+        return output.unusedBytes
       } else {
         return nil
       }
     }
   )
+  output.used(bytes: Int(totalBytes))
 }
 
 fileprivate func decompressChunked<S: CompressedStream>(
   stream: S,
   source: ImageSource,
   offset: Int,
-  output: ImageSource
+  output: inout ImageSource
 ) throws {
   let bufSize = 65536
   let outputBuffer = UnsafeMutableRawBufferPointer.allocate(byteCount: bufSize,
@@ -355,7 +356,7 @@ fileprivate func decompressChunked<S: CompressedStream>(
     outputBuffer.deallocate()
   }
 
-  _ = try stream.decompress(
+  let total = try stream.decompress(
     input: {
       () throws -> UnsafeRawBufferPointer in
 
@@ -401,12 +402,12 @@ extension ImageSource {
     switch chdr.ch_type {
       case .ELFCOMPRESS_ZLIB:
         try decompress(stream: ZLibStream(),
-                       source: source, offset: MemoryLayout<Elf32_Chdr>.stride,
-                       output: self)
+                       source: source, offset: MemoryLayout<Traits.Chdr>.stride,
+                       output: &self)
       case .ELFCOMPRESS_ZSTD:
         try decompress(stream: ZStdStream(),
-                       source: source, offset: MemoryLayout<Elf32_Chdr>.stride,
-                       output: self)
+                       source: source, offset: MemoryLayout<Traits.Chdr>.stride,
+                       output: &self)
       default:
         throw CompressedImageSourceError.unsupportedFormat
     }
@@ -433,7 +434,7 @@ extension ImageSource {
 
     try decompress(stream: ZLibStream(),
                    source: source, offset: 12,
-                   output: self)
+                   output: &self)
   }
 
   init(lzmaCompressedImageSource source: ImageSource) throws {
@@ -441,6 +442,6 @@ extension ImageSource {
 
     try decompressChunked(stream: LZMAStream(),
                           source: source, offset: 0,
-                          output: self)
+                          output: &self)
   }
 }
