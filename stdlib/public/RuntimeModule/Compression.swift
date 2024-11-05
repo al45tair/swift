@@ -356,7 +356,7 @@ fileprivate func decompressChunked<S: CompressedStream>(
     outputBuffer.deallocate()
   }
 
-  let total = try stream.decompress(
+  let _ = try stream.decompress(
     input: {
       () throws -> UnsafeRawBufferPointer in
 

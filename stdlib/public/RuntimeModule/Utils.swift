@@ -107,3 +107,20 @@ func notOptional<T>(_ optional: T?) -> T {
 func notOptional<T>(_ value: T) -> T {
   return value
 }
+
+/// Convert mutable pointers to non-mutable
+///
+/// This is useful when interfacing with the system C library, because some
+/// C libraries have const annotations in places others do not.
+func notMutable<T>(_ mutable: UnsafeMutablePointer<T>) -> UnsafePointer<T> {
+  return UnsafePointer<T>(mutable)
+}
+func notMutable<T>(_ immutable: UnsafePointer<T>) -> UnsafePointer<T> {
+  return immutable
+}
+func notMutable(_ mutable: UnsafeMutableRawPointer) -> UnsafeRawPointer {
+  return UnsafeRawPointer(mutable)
+}
+func notMutable(_ immutable: UnsafeRawPointer) -> UnsafeRawPointer {
+  return immutable
+}

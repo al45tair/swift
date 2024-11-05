@@ -144,8 +144,8 @@ internal struct SwiftBacktrace {
   }
 
   static func measureDuration(_ body: () -> ()) -> timespec {
-    var startTime = timespec()
-    var endTime = timespec()
+    var startTime = timespec(tv_sec: 0, tv_nsec: 0)
+    var endTime = timespec(tv_sec: 0, tv_nsec: 0)
 
     clock_gettime(CLOCK_MONOTONIC, &startTime)
     body()
