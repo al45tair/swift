@@ -30,6 +30,7 @@ internal import Glibc
 #elseif canImport(Musl)
 internal import Musl
 #endif
+internal import BacktracingImpl.Runtime
 
 /// A symbolicated backtrace
 public struct SymbolicatedBacktrace: CustomStringConvertible {

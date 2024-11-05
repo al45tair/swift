@@ -18,7 +18,6 @@ import Swift
 
 // The size of the pages in the page cache (must be a power of 2)
 fileprivate let pageSize = 4096
-
 fileprivate let pageMask = pageSize - 1
 
 // The largest chunk we will try to cache data for
@@ -40,12 +39,7 @@ public class CachingMemoryReader<Reader: MemoryReader>: MemoryReader {
     }
   }
 
-  #if os(Linux)
-  @_specialize(kind: full, where Reader == UncachedMemserverMemoryReader)
-  #endif
-  @_specialize(kind: full, where Reader == UncachedRemoteMemoryReader)
-  @_specialize(kind: full, where Reader == UncachedLocalMemoryReader)
-  private func getPage(at address: Address) throws -> UnsafeRawBufferPointer {
+  func getPage(at address: Address) throws -> UnsafeRawBufferPointer {
     precondition((address & Address(pageMask)) == 0)
 
     if let page = cache[address] {
@@ -63,12 +57,6 @@ public class CachingMemoryReader<Reader: MemoryReader>: MemoryReader {
     return result
   }
 
-  #if os(Linux)
-  @_specialize(exported: true, kind: full, where Reader == UncachedMemserverMemoryReader)
-  #endif
-  @_specialize(exported: true, kind: full, where Reader == UncachedLocalMemoryReader)
-  // ###FIXME: I can't turn this on for some reason:
-  //@_specialize(exported: true, kind: full, where Reader == UncachedRemoteMemoryReader)
   public func fetch(from address: Address,
                     into buffer: UnsafeMutableRawBufferPointer) throws {
     guard buffer.count <= maxCachedSize else {
