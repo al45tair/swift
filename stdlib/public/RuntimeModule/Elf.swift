@@ -1881,7 +1881,7 @@ typealias Elf64Image = ElfImage<Elf64Traits>
 /// extract the address range for the text segment and the UUID, if any.
 @_specialize(kind: full, where R == UnsafeLocalMemoryReader)
 @_specialize(kind: full, where R == RemoteMemoryReader)
-#if os(linux)
+#if os(Linux)
 @_specialize(kind: full, where R == MemserverMemoryReader)
 #endif
 func getElfImageInfo<R: MemoryReader>(at address: R.Address,
@@ -1918,7 +1918,7 @@ func getElfImageInfo<R: MemoryReader>(at address: R.Address,
 @_specialize(kind: full, where R == UnsafeLocalMemoryReader, Traits == Elf64Traits)
 @_specialize(kind: full, where R == RemoteMemoryReader, Traits == Elf32Traits)
 @_specialize(kind: full, where R == RemoteMemoryReader, Traits == Elf64Traits)
-#if os(linux)
+#if os(Linux)
 @_specialize(kind: full, where R == MemserverMemoryReader, Traits == Elf32Traits)
 @_specialize(kind: full, where R == MemserverMemoryReader, Traits == Elf64Traits)
 #endif

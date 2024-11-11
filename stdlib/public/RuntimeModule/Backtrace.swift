@@ -406,7 +406,7 @@ extension Backtrace {
   @_spi(Internal)
   @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == UnsafeLocalMemoryReader)
   @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == RemoteMemoryReader)
-  #if os(linux)
+  #if os(Linux)
   @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == MemserverMemoryReader)
   #endif
   public static func capture<Ctx: Context, Rdr: MemoryReader>(
