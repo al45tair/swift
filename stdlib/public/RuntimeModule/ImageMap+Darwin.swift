@@ -74,7 +74,7 @@ extension ImageMap {
 
           images.append(Image(name: name,
                               path: pathString,
-                              uniqueID: theUUID,
+                              uniqueId: theUUID,
                               baseAddress: machHeaderAddress,
                               endOfText: endOfText))
         }

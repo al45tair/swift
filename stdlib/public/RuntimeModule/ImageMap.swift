@@ -17,6 +17,11 @@
 
 import Swift
 
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+internal import Darwin
+internal import BacktracingImpl.OS.Darwin
+#endif
+
 /// Holds a map of the process's address space.
 public struct ImageMap: Collection, Sendable, Hashable {
 
