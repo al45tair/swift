@@ -46,7 +46,7 @@ public struct ImageMap: Collection, Sendable, Hashable {
   struct Image: Sendable, Hashable {
     var name: String?
     var path: String?
-    var uniqueId: [UInt8]?
+    var uniqueID: [UInt8]?
     var baseAddress: Address
     var endOfText: Address
   }
@@ -121,7 +121,7 @@ extension ImageMap: CustomStringConvertible {
       let hexBase = hex(image.baseAddress, width: addressWidth)
       let hexEnd = hex(image.endOfText, width: addressWidth)
       let buildId: String
-      if let bytes = image.uniqueId {
+      if let bytes = image.uniqueID {
         buildId =  hex(bytes)
       } else {
         buildId = "<no build ID>"
@@ -167,7 +167,7 @@ extension Backtrace.Image {
 
     self.init(name: image.name,
               path: image.path,
-              uniqueID: image.uniqueId,
+              uniqueID: image.uniqueID,
               baseAddress: baseAddress,
               endOfText: endOfText)
   }

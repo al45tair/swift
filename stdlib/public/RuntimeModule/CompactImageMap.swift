@@ -357,7 +357,7 @@ public enum CompactImageMapFormat {
         let image = ImageMap.Image(
           name: name,
           path: path,
-          uniqueId: buildId,
+          uniqueID: buildId,
           baseAddress: baseAddress,
           endOfText: endOfText
         )
@@ -401,8 +401,8 @@ public enum CompactImageMapFormat {
         case image
         case baseAddress(Int)
         case endOfText(Int)
-        case uniqueId(Int)
-        case uniqueIdBytes(Int)
+        case uniqueID(Int)
+        case uniqueIDBytes(Int)
         case path
         case pathCode(Int)
         case pathString
@@ -557,16 +557,16 @@ public enum CompactImageMapFormat {
           case let .endOfText(ndx):
             let byte = ebytes[ndx]
             if ndx + 1 == 8 {
-              let count = source.images[self.ndx].uniqueId?.count ?? 0
+              let count = source.images[self.ndx].uniqueID?.count ?? 0
               let bits = Int.bitWidth - count.leadingZeroBitCount
-              state = .uniqueId(7 * (bits / 7))
+              state = .uniqueID(7 * (bits / 7))
             } else {
               state = .endOfText(ndx + 1)
             }
             return byte
 
-          case let .uniqueId(cndx):
-            guard let count = source.images[self.ndx].uniqueId?.count else {
+          case let .uniqueID(cndx):
+            guard let count = source.images[self.ndx].uniqueID?.count else {
               state = .path
               if let path = source.images[self.ndx].path {
                 remainingPath = path.utf8[...]
@@ -577,17 +577,17 @@ public enum CompactImageMapFormat {
             }
             let byte = UInt8(truncatingIfNeeded: (count >> cndx) & 0x7f)
             if cndx == 0 {
-              state = .uniqueIdBytes(0)
+              state = .uniqueIDBytes(0)
               return byte
             } else {
-              state = .uniqueId(cndx - 7)
+              state = .uniqueID(cndx - 7)
               return 0x80 | byte
             }
 
-          case let .uniqueIdBytes(byteNdx):
-            let uniqueId = source.images[self.ndx].uniqueId!
-            let byte = uniqueId[byteNdx]
-            if byteNdx + 1 == uniqueId.count {
+          case let .uniqueIDBytes(byteNdx):
+            let uniqueID = source.images[self.ndx].uniqueID!
+            let byte = uniqueID[byteNdx]
+            if byteNdx + 1 == uniqueID.count {
               state = .path
               if let path = source.images[self.ndx].path {
                 remainingPath = path.utf8[...]
@@ -595,7 +595,7 @@ public enum CompactImageMapFormat {
                 remainingPath = nil
               }
             } else {
-              state = .uniqueIdBytes(byteNdx + 1)
+              state = .uniqueIDBytes(byteNdx + 1)
             }
             return byte
 

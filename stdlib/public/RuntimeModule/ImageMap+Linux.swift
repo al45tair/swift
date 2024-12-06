@@ -104,7 +104,7 @@ extension ImageMap {
 
       let image = Image(name: String(name),
                         path: String(path),
-                        uniqueId: uuid,
+                        uniqueID: uuid,
                         baseAddress: range.low,
                         endOfText: Address(endOfText))
 
