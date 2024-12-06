@@ -256,7 +256,6 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
     #endif
 
     asyncContext = next
-
     return .asyncResumePoint(pc)
   }
 }

@@ -371,7 +371,8 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   }
 
   /// Initialise a Backtrace from a sequence of `RichFrame`s
-  init<Address: FixedWidthInteger>(architecture: String,
+  @_spi(Internal)
+  public init<Address: FixedWidthInteger>(architecture: String,
        frames: some Sequence<RichFrame<Address>>,
        images: ImageMap?) {
     self.architecture = architecture
@@ -383,20 +384,26 @@ public struct Backtrace: CustomStringConvertible, Sendable {
 // -- Capture Implementation -------------------------------------------------
 
 extension Backtrace {
+
+  // ###FIXME: There is a problem with @_specialize here that results in the
+  //           arguments not lining up properly when this gets used from
+  //           swift-backtrace.
+
   @_spi(Internal)
-  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == UnsafeLocalMemoryReader)
-  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == RemoteMemoryReader)
-  #if os(Linux)
-  @_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == MemserverMemoryReader)
-  #endif
+  //@_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == UnsafeLocalMemoryReader)
+  //@_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == RemoteMemoryReader)
+  //#if os(Linux)
+  //@_specialize(exported: true, kind: full, where Ctx == HostContext, Rdr == MemserverMemoryReader)
+  //#endif
+  @inlinable
   public static func capture<Ctx: Context, Rdr: MemoryReader>(
     from context: Ctx,
     using memoryReader: Rdr,
     images: ImageMap?,
     algorithm: UnwindAlgorithm,
-    limit: Int?,
-    offset: Int,
-    top: Int
+    limit: Int? = 64,
+    offset: Int = 0,
+    top: Int = 16
   ) throws -> Backtrace {
     switch algorithm {
       // All of them, for now, use the frame pointer unwinder.  In the long
@@ -408,6 +415,8 @@ extension Backtrace {
                                memoryReader: memoryReader)
 
         if let limit = limit {
+          print("limit = \(limit), offset = \(offset), top = \(top)")
+
           let limited = LimitSequence(unwinder,
                                       limit: limit,
                                       offset: offset,
@@ -419,7 +428,7 @@ extension Backtrace {
         }
 
         return Backtrace(architecture: context.architecture,
-                         frames: unwinder,
+                         frames: unwinder.dropFirst(offset),
                          images: images)
     }
   }
