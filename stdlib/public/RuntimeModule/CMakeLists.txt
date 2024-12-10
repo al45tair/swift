@@ -25,6 +25,7 @@ endif()
 set(RUNTIME_SOURCES
   Address.swift
   Backtrace.swift
+  BacktraceBuffer.swift
   BacktraceFormatter.swift
   ByteSwapping.swift
   CachingMemoryReader.swift
@@ -46,6 +47,7 @@ set(RUNTIME_SOURCES
   Libc.swift
   LimitSequence.swift
   MemoryReader.swift
+  NonAllocatingLimitSequence.swift
   ProcMapsScanner.swift
   Registers.swift
   Runtime.swift
