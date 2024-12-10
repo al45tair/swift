@@ -27,6 +27,7 @@ set(RUNTIME_SOURCES
   Address.swift
   Backtrace.swift
   Backtrace+Codable.swift
+  BacktraceBuffer.swift
   BacktraceFormatter.swift
   Base64.swift
   ByteSwapping.swift
@@ -49,6 +50,7 @@ set(RUNTIME_SOURCES
   Libc.swift
   LimitSequence.swift
   MemoryReader.swift
+  NonAllocatingLimitSequence.swift
   ProcMapsScanner.swift
   Registers.swift
   Runtime.swift
