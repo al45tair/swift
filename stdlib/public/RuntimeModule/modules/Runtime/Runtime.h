@@ -23,9 +23,6 @@
 #include "swift/Runtime/CrashInfo.h"
 
 #ifdef __cplusplus
-namespace swift {
-namespace runtime {
-
 #define EXTERN_C extern "C"
 #else
 #define EXTERN_C
@@ -42,10 +39,5 @@ EXTERN_C char *_swift_backtrace_demangle(const char *rawName,
                                          size_t rawNameLength,
                                          char *outputBuffer,
                                          size_t *outputBufferSize);
-
-#ifdef __cplusplus
-} // namespace runtime
-} // namespace swift
-#endif
 
 #endif // SWIFT_BACKTRACING_RUNTIME_H
