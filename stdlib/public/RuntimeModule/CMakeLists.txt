@@ -14,6 +14,7 @@
 #  rather, it's a high level Swift interface to things
 set(swift_runtime_link_libraries
   swiftCore
+  swiftCxxStdlib
   swift_Concurrency
 )
 
@@ -25,7 +26,9 @@ endif()
 set(RUNTIME_SOURCES
   Address.swift
   Backtrace.swift
+  Backtrace+Codable.swift
   BacktraceFormatter.swift
+  Base64.swift
   ByteSwapping.swift
   CachingMemoryReader.swift
   CompactBacktrace.swift
@@ -63,7 +66,7 @@ set(RUNTIME_COMPILE_FLAGS
   "-Xcc;-I${SWIFT_SOURCE_DIR}/include"
   "-Xcc;-I${CMAKE_BINARY_DIR}/include"
   "-Xcc;-I${SWIFT_STDLIB_SOURCE_DIR}/public/RuntimeModule/modules"
-  "-disable-upcoming-feature MemberImportVisibility")
+  "-disable-upcoming-feature;MemberImportVisibility")
 
 ###TODO: Add these when we add static linking support
 #
