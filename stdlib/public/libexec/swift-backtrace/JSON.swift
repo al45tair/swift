@@ -223,7 +223,7 @@ extension SwiftBacktrace {
                         "column": \(sourceLocation.column)
                         """)
 
-                write(" } ")
+                write(" }")
               }
             }
             write(" }")
@@ -257,7 +257,13 @@ extension SwiftBacktrace {
 
     if args.threads! {
       write(#", "threads": [ "#)
+      var first = true
       for (ndx, thread) in target.threads.enumerated() {
+        if first {
+          first = false
+        } else {
+          write(", ")
+        }
         outputJSONThread(ndx: ndx, thread: thread)
       }
       write("]")

@@ -1,7 +1,8 @@
 // RUN: %empty-directory(%t)
-// RUN: %target-build-swift %s -parse-as-library -Onone -g -o %t/Crash
-// RUN: %target-codesign %t/Crash
-// RUN: env SWIFT_BACKTRACE=enable=yes,cache=no,format=json,output-to=%t/crash.json, %target-run %t/Crash 2>&1 || true
+// RUN: %target-build-swift %s -parse-as-library -Onone -g -o %t/JSONAsync
+// RUN: %target-codesign %t/JSONAsync
+
+// RUN: env SWIFT_BACKTRACE=enable=yes,demangle=no,cache=no,format=json,output-to=%t/crash.json %target-run %t/JSONAsync 2>&1 || true
 // RUN: %validate-json %t/crash.json | %FileCheck %s
 
 // UNSUPPORTED: use_os_stdlib
@@ -11,32 +12,26 @@
 // REQUIRES: backtracing
 // REQUIRES: OS=macosx || OS=linux-gnu
 
-func level1() {
-  level2()
-}
-
-func level2() {
-  level3()
-}
-
-func level3() {
-  level4()
-}
-
-func level4() {
-  level5()
-}
-
-func level5() {
-  print("About to crash")
+@available(SwiftStdlib 5.1, *)
+func crash() {
   let ptr = UnsafeMutablePointer<Int>(bitPattern: 4)!
   ptr.pointee = 42
 }
 
+@available(SwiftStdlib 5.1, *)
+func level(_ n: Int) async {
+  if n < 5 {
+    await level(n + 1)
+  } else {
+    crash()
+  }
+}
+
+@available(SwiftStdlib 5.1, *)
 @main
-struct Crash {
-  static func main() {
-    level1()
+struct JSONAsync {
+  static func main() async {
+    await level(1)
   }
 }
 
@@ -62,94 +57,102 @@ struct Crash {
 
 // CHECK-NEXT: "threads": [
 // CHECK-NEXT:   {
-// CHECK-NEXT:     "crashed": true,
+
+// The crashing thread isn't necessarily the first
+
+// CHECK:          "crashed": true,
 // CHECK-NEXT:     "frames": [
 // CHECK-NEXT:       {
 // CHECK-NEXT:         "kind": "programCounter",
 // CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
-// CHECK-NEXT:         "symbol": "{{_?}}$s5Crash6level5yyF",
+// CHECK-NEXT:         "symbol": "{{_?}}$s9JSONAsync5crashyyF",
 // CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
-// CHECK-NEXT:         "description": "level5() + [[OFFSET]]",
-// CHECK-NEXT:         "image": "Crash",
+// CHECK-NEXT:         "image": "JSONAsync",
 // CHECK-NEXT:         "sourceLocation": {
-// CHECK-NEXT:           "file": "{{.*}}/JSON.swift",
-// CHECK-NEXT:           "line": 33,
+// CHECK-NEXT:           "file": "{{.*}}/JSONAsync.swift",
+// CHECK-NEXT:           "line": 18,
 // CHECK-NEXT:           "column": 15
 // CHECK-NEXT:         }
 // CHECK-NEXT:       },
 // CHECK-NEXT:       {
 // CHECK-NEXT:         "kind": "returnAddress",
 // CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
-// CHECK-NEXT:         "symbol": "{{_?}}$s5Crash6level4yyF",
+// CHECK-NEXT:         "symbol": "{{_?}}$s9JSONAsync5levelyySiYaFTY0_",
 // CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
-// CHECK-NEXT:         "description": "level4() + [[OFFSET]]",
-// CHECK-NEXT:         "image": "Crash",
+// CHECK-NEXT:         "image": "JSONAsync",
 // CHECK-NEXT:         "sourceLocation": {
-// CHECK-NEXT:           "file": "{{.*}}/JSON.swift",
-// CHECK-NEXT:           "line": 27,
-// CHECK-NEXT:           "column": 3
-// CHECK-NEXT:         }
-// CHECK-NEXT:       },
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "kind": "returnAddress",
-// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
-// CHECK-NEXT:         "symbol": "{{_?}}$s5Crash6level3yyF",
-// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
-// CHECK-NEXT:         "description": "level3() + [[OFFSET]]",
-// CHECK-NEXT:         "image": "Crash",
-// CHECK-NEXT:         "sourceLocation": {
-// CHECK-NEXT:           "file": "{{.*}}/JSON.swift",
-// CHECK-NEXT:           "line": 23,
-// CHECK-NEXT:           "column": 3
-// CHECK-NEXT:         }
-// CHECK-NEXT:       },
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "kind": "returnAddress",
-// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
-// CHECK-NEXT:         "symbol": "{{_?}}$s5Crash6level2yyF",
-// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
-// CHECK-NEXT:         "description": "level2() + [[OFFSET]]",
-// CHECK-NEXT:         "image": "Crash",
-// CHECK-NEXT:         "sourceLocation": {
-// CHECK-NEXT:           "file": "{{.*}}/JSON.swift",
-// CHECK-NEXT:           "line": 19,
-// CHECK-NEXT:           "column": 3
-// CHECK-NEXT:         }
-// CHECK-NEXT:       },
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "kind": "returnAddress",
-// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
-// CHECK-NEXT:         "symbol": "{{_?}}$s5Crash6level1yyF",
-// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
-// CHECK-NEXT:         "description": "level1() + [[OFFSET]]",
-// CHECK-NEXT:         "image": "Crash",
-// CHECK-NEXT:         "sourceLocation": {
-// CHECK-NEXT:           "file": "{{.*}}/JSON.swift",
-// CHECK-NEXT:           "line": 15,
-// CHECK-NEXT:           "column": 3
-// CHECK-NEXT:         }
-// CHECK-NEXT:       },
-// CHECK-NEXT:       {
-// CHECK-NEXT:         "kind": "returnAddress",
-// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
-// CHECK-NEXT:         "symbol": "{{_?}}$s5CrashAAV4mainyyFZ",
-// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
-// CHECK-NEXT:         "description": "static Crash.main() + [[OFFSET]]",
-// CHECK-NEXT:         "image": "Crash",
-// CHECK-NEXT:         "sourceLocation": {
-// CHECK-NEXT:           "file": "{{.*}}/JSON.swift",
-// CHECK-NEXT:           "line": 39,
+// CHECK-NEXT:           "file": "{{.*}}/JSONAsync.swift",
+// CHECK-NEXT:           "line": 26,
 // CHECK-NEXT:           "column": 5
 // CHECK-NEXT:         }
 // CHECK-NEXT:       },
 // CHECK-NEXT:       {
-// CHECK-NEXT:         "kind": "returnAddress",
+// CHECK-NEXT:         "kind": "asyncResumePoint",
+// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
+// CHECK-NEXT:         "symbol": "{{_?}}$s9JSONAsync5levelyySiYaFTQ1_",
+// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
+// CHECK-NEXT:         "image": "JSONAsync",
+// CHECK-NEXT:         "sourceLocation": {
+// CHECK-NEXT:           "file": "{{.*}}/JSONAsync.swift",
+// CHECK-NEXT:           "line": 24,
+// CHECK-NEXT:           "column": 0
+// CHECK-NEXT:         }
+// CHECK-NEXT:       },
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "kind": "asyncResumePoint",
+// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
+// CHECK-NEXT:         "symbol": "{{_?}}$s9JSONAsync5levelyySiYaFTQ1_",
+// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
+// CHECK-NEXT:         "image": "JSONAsync",
+// CHECK-NEXT:         "sourceLocation": {
+// CHECK-NEXT:           "file": "{{.*}}/JSONAsync.swift",
+// CHECK-NEXT:           "line": 24,
+// CHECK-NEXT:           "column": 0
+// CHECK-NEXT:         }
+// CHECK-NEXT:       },
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "kind": "asyncResumePoint",
+// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
+// CHECK-NEXT:         "symbol": "{{_?}}$s9JSONAsync5levelyySiYaFTQ1_",
+// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
+// CHECK-NEXT:         "image": "JSONAsync",
+// CHECK-NEXT:         "sourceLocation": {
+// CHECK-NEXT:           "file": "{{.*}}/JSONAsync.swift",
+// CHECK-NEXT:           "line": 24,
+// CHECK-NEXT:           "column": 0
+// CHECK-NEXT:         }
+// CHECK-NEXT:       },
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "kind": "asyncResumePoint",
+// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
+// CHECK-NEXT:         "symbol": "{{_?}}$s9JSONAsync5levelyySiYaFTQ1_",
+// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
+// CHECK-NEXT:         "image": "JSONAsync",
+// CHECK-NEXT:         "sourceLocation": {
+// CHECK-NEXT:           "file": "{{.*}}/JSONAsync.swift",
+// CHECK-NEXT:           "line": 24,
+// CHECK-NEXT:           "column": 0
+// CHECK-NEXT:         }
+// CHECK-NEXT:       },
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "kind": "asyncResumePoint",
+// CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
+// CHECK-NEXT:         "symbol": "{{_?}}$s9JSONAsyncAAV4mainyyYaFZTQ0_",
+// CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
+// CHECK-NEXT:         "image": "JSONAsync",
+// CHECK-NEXT:         "sourceLocation": {
+// CHECK-NEXT:           "file": "{{.*}}/JSONAsync.swift",
+// CHECK-NEXT:           "line": 34,
+// CHECK-NEXT:           "column": 0
+// CHECK-NEXT:         }
+// CHECK-NEXT:       },
+// CHECK-NEXT:       {
+// CHECK-NEXT:         "kind": "asyncResumePoint",
 // CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
 // CHECK-NEXT:         "system": true,
-// CHECK-NEXT:         "symbol": "{{_?}}$s5CrashAAV5$mainyyFZ",
+// CHECK-NEXT:         "symbol": "{{_?}}$s9JSONAsyncAAV5$mainyyYaFZTQ0_",
 // CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
-// CHECK-NEXT:         "description": "static Crash.$main() + [[OFFSET]]",
-// CHECK-NEXT:         "image": "Crash",
+// CHECK-NEXT:         "image": "JSONAsync",
 // CHECK-NEXT:         "sourceLocation": {
 // CHECK-NEXT:           "file": "{{/?}}<compiler-generated>",
 // CHECK-NEXT:           "line": 0,
@@ -157,15 +160,14 @@ struct Crash {
 // CHECK-NEXT:         }
 // CHECK-NEXT:       },
 // CHECK-NEXT:       {
-// CHECK-NEXT:         "kind": "returnAddress",
+// CHECK-NEXT:         "kind": "asyncResumePoint",
 // CHECK-NEXT:         "address": "0x{{[0-9a-f]+}}",
 // CHECK-NEXT:         "system": true,
-// CHECK-NEXT:         "symbol": "{{_?main}}",
+// CHECK-NEXT:         "symbol": "{{_?}}async_MainTQ0_",
 // CHECK-NEXT:         "offset": [[OFFSET:[0-9]+]],
-// CHECK-NEXT:         "description": "main + [[OFFSET]]",
-// CHECK-NEXT:         "image": "Crash",
+// CHECK-NEXT:         "image": "JSONAsync",
 // CHECK-NEXT:         "sourceLocation": {
-// CHECK-NEXT:           "file": "{{.*}}/JSON.swift",
+// CHECK-NEXT:           "file": "{{/?}}<compiler-generated>",
 // CHECK-NEXT:           "line": 0,
 // CHECK-NEXT:           "column": 0
 // CHECK-NEXT:         }
@@ -174,8 +176,11 @@ struct Crash {
 // More frames here, but they're system specific
 
 // CHECK:          ]
-// CHECK:        }
-// CHECK-NEXT: ],
+// CHECK-NEXT:   }
+
+// Potentially more threads here
+
+// CHECK:      ],
 // CHECK-NEXT: "registers": {
 // CHECK-NEXT:   "{{.*}}": "0x{{[0-9a-f]+}}",
 
@@ -194,9 +199,9 @@ struct Crash {
 
 // Maybe multiple images before this one
 
-// CHECK:          "name": "Crash",
+// CHECK:          "name": "JSONAsync",
 // CHECK-NEXT:     "buildId": "{{([0-9a-f][0-9a-f])+}}",
-// CHECK-NEXT:     "path": "{{.*}}/Crash",
+// CHECK-NEXT:     "path": "{{.*}}/JSONAsync",
 // CHECK-NEXT:     "baseAddress": "0x{{[0-9a-f]+}}",
 // CHECK-NEXT:     "endOfText": "0x{{[0-9a-f]+}}"
 // CHECK-NEXT:   }
