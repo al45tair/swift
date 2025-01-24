@@ -22,10 +22,15 @@
 #define SWIFT_BACKTRACING_DARWIN_H
 #ifdef __APPLE__
 
-#include <mach/mach.h>
-#include <mach/mach_vm.h>
+#include <TargetConditionals.h>
 
+#include <mach/mach.h>
+
+#if TARGET_OS_OSX
+#include <mach/mach_vm.h>
 #include <libproc.h>
+#endif
+
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -300,4 +305,3 @@ enum {
 
 #endif // __APPLE__
 #endif // SWIFT_BACKTRACING_DARWIN_H
-

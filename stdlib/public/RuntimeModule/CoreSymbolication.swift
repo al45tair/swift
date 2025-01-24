@@ -15,7 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
 
 import Swift
 

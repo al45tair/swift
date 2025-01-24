@@ -17,7 +17,7 @@
 
 import Swift
 
-#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
 internal import Darwin
 internal import BacktracingImpl.OS.Darwin
 #elseif os(Windows)
@@ -417,12 +417,12 @@ private func untabify(_ s: String, tabWidth: Int = 8) -> String {
 ///
 /// @returns A string containing the sanitized path.
 private func sanitizePath(_ path: String) -> String {
-  #if os(macOS)
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
   return CRCopySanitizedPath(path,
                              kCRSanitizePathGlobAllTypes
                                | kCRSanitizePathKeepFile)
   #else
-  // For now, on non-macOS systems, do nothing
+  // For now, on non-Darwin systems, do nothing
   return path
   #endif
 }

@@ -36,7 +36,9 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   var reader: MemoryReader
 
   @_specialize(exported: true, kind: full, where C == HostContext, M == UnsafeLocalMemoryReader)
+  #if os(macOS) || os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == RemoteMemoryReader)
+  #endif
   #if os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == MemserverMemoryReader)
   #endif
@@ -77,7 +79,9 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   }
 
   @_specialize(exported: true, kind: full, where C == HostContext, M == UnsafeLocalMemoryReader)
+  #if os(macOS) || os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == RemoteMemoryReader)
+  #endif
   #if os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == MemserverMemoryReader)
   #endif
@@ -114,12 +118,14 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   }
 
   @_specialize(exported: true, kind: full, where C == HostContext, M == UnsafeLocalMemoryReader)
+  #if os(macOS) || os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == RemoteMemoryReader)
+  #endif
   #if os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == MemserverMemoryReader)
   #endif
   private func isAsyncFrame(_ storedFp: Address) -> Bool {
-    #if (os(macOS) || os(iOS) || os(watchOS)) && (arch(arm64) || arch(arm64_32) || arch(x86_64))
+    #if (os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)) && (arch(arm64) || arch(arm64_32) || arch(x86_64))
     // On Darwin, we borrow a bit of the frame pointer to indicate async
     // stack frames
     return (storedFp & (1 << 60)) != 0
@@ -129,7 +135,9 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   }
 
   @_specialize(exported: true, kind: full, where C == HostContext, M == UnsafeLocalMemoryReader)
+  #if os(macOS) || os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == RemoteMemoryReader)
+  #endif
   #if os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == MemserverMemoryReader)
   #endif
@@ -138,7 +146,9 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   }
 
   @_specialize(exported: true, kind: full, where C == HostContext, M == UnsafeLocalMemoryReader)
+  #if os(macOS) || os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == RemoteMemoryReader)
+  #endif
   #if os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == MemserverMemoryReader)
   #endif
@@ -155,7 +165,9 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
   }
 
   @_specialize(exported: true, kind: full, where C == HostContext, M == UnsafeLocalMemoryReader)
+  #if os(macOS) || os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == RemoteMemoryReader)
+  #endif
   #if os(Linux)
   @_specialize(exported: true, kind: full, where C == HostContext, M == MemserverMemoryReader)
   #endif
@@ -229,9 +241,9 @@ public struct FramePointerUnwinder<C: Context, M: MemoryReader>: Sequence, Itera
     // On arm64_32, the two pointers at the start of the context are 32-bit,
     // although the stack layout is identical to vanilla arm64
     do {
-      var next32 = try reader.fetch(from: MemoryReader.Address(strippedCtx),
+      let next32 = try reader.fetch(from: MemoryReader.Address(strippedCtx),
                                     as: UInt32.self)
-      var pc32 = try reader.fetch(from: MemoryReader.Address(strippedCtx + 4),
+      let pc32 = try reader.fetch(from: MemoryReader.Address(strippedCtx + 4),
                                   as: UInt32.self)
 
       next = Address(next32)

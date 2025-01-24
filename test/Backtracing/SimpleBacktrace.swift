@@ -4,8 +4,7 @@
 // RUN: %target-run %t/SimpleBacktrace | %FileCheck %s
 
 // REQUIRES: executable_test
-// REQUIRES: backtracing
-// REQUIRES: OS=macosx || OS=linux-gnu
+// REQUIRES: OS=macosx || OS=ios || OS=tvos || OS=watchos || OS=visionos || OS=linux-gnu
 
 // UNSUPPORTED: use_os_stdlib
 // UNSUPPORTED: back_deployment_runtime

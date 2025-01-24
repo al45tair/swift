@@ -16,7 +16,7 @@
 
 import Swift
 
-#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
 internal import Darwin
 #elseif os(Windows)
 internal import ucrt

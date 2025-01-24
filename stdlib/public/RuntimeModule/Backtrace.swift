@@ -16,16 +16,6 @@
 
 import Swift
 
-// #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
-// internal import Darwin
-// #elseif os(Windows)
-// internal import ucrt
-// #elseif canImport(Glibc)
-// internal import Glibc
-// #elseif canImport(Musl)
-// internal import Musl
-// #endif
-
 /// Holds a backtrace.
 public struct Backtrace: CustomStringConvertible, Sendable {
   /// The type of an address.
@@ -235,7 +225,7 @@ public struct Backtrace: CustomStringConvertible, Sendable {
   var representation: [UInt8]
 
   /// A list of captured frame information.
-  @available(macOS 10.15, *)
+  @available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 6.0, *)
   public var frames: some Sequence<Frame> {
     return CompactBacktraceFormat.Decoder(representation)
   }
@@ -408,7 +398,7 @@ extension Backtrace {
     switch algorithm {
       // All of them, for now, use the frame pointer unwinder.  In the long
       // run, we should be using DWARF EH frame data for .precise.
-      case .auto, .fast, .precise:
+      default:
         let unwinder =
           FramePointerUnwinder(context: context,
                                images: images,

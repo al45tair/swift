@@ -6,8 +6,7 @@
 // UNSUPPORTED: use_os_stdlib
 // UNSUPPORTED: back_deployment_runtime
 // REQUIRES: executable_test
-// REQUIRES: backtracing
-// REQUIRES: OS=macosx
+// REQUIRES: OS=macosx || OS=ios || OS=tvos || OS=watchos || OS=visionos
 
 // This currently doesn't work on Linux because the unwind finishes at pow(),
 // which presumably doesn't have a frame pointer.  When we add the Dwarf EH

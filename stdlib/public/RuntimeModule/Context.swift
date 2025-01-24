@@ -19,7 +19,7 @@
 
 import Swift
 
-#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
 internal import Darwin
 #elseif os(Windows)
 internal import ucrt
@@ -29,7 +29,7 @@ internal import Glibc
 internal import Musl
 #endif
 
-#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+#if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
 internal import BacktracingImpl.OS.Darwin
 #endif
 
@@ -239,7 +239,10 @@ extension arm_gprs {
 
   public static var registerCount: Int { return 56 }
 
-  #if os(macOS) && arch(x86_64)
+  #if (os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)) && arch(x86_64)
+
+  // watchOS doesn't allow `thread_get_state()`, so we can't do this there
+  #if !os(watchOS)
   init?(from thread: thread_t) {
     var state = darwin_x86_64_thread_state()
     let kr = thread_get_state(thread,
@@ -251,6 +254,7 @@ extension arm_gprs {
 
     self.init(from: state)
   }
+  #endif
 
   init(with mctx: darwin_x86_64_mcontext) {
     self.init(from: mctx.ss)
@@ -281,9 +285,11 @@ extension arm_gprs {
     gprs.valid = 0x1fffff
   }
 
+  #if !os(watchOS)
   public static func fromHostThread(_ thread: Any) -> HostContext? {
     return X86_64Context(from: thread as! thread_t)
   }
+  #endif
 
   public static func fromHostMContext(_ mcontext: Any) -> HostContext {
     return X86_64Context(with: mcontext as! darwin_x86_64_mcontext)
@@ -434,7 +440,7 @@ extension arm_gprs {
     return (framePointer & 0xf) == 0
   }
 
-  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
   internal static var coreSymbolicationArchitecture: CSArchitecture {
     return kCSArchitectureX86_64
   }
@@ -617,7 +623,7 @@ extension arm_gprs {
     return (framePointer & 0xf) == 8
   }
 
-  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
   internal static var coreSymbolicationArchitecture: CSArchitecture {
     return kCSArchitectureI386
   }
@@ -665,7 +671,10 @@ extension arm_gprs {
 
   public static var registerCount: Int { return 40 }
 
-  #if os(macOS) && arch(arm64)
+  #if (os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)) && arch(arm64)
+
+  // watchOS doesn't allow `thread_get_state()`, so we can't do this there
+  #if !os(watchOS)
   init?(from thread: thread_t) {
     var state = darwin_arm64_thread_state()
     let kr = thread_get_state(thread,
@@ -677,6 +686,7 @@ extension arm_gprs {
 
     self.init(from: state)
   }
+  #endif
 
   init(with mctx: darwin_arm64_mcontext) {
     self.init(from: mctx.ss)
@@ -702,9 +712,11 @@ extension arm_gprs {
     gprs.valid = 0x1ffffffff
   }
 
+  #if !os(watchOS)
   public static func fromHostThread(_ thread: Any) -> HostContext? {
     return ARM64Context(from: thread as! thread_t)
   }
+  #endif
 
   public static func fromHostMContext(_ mcontext: Any) -> HostContext {
     return ARM64Context(with: mcontext as! darwin_arm64_mcontext)
@@ -828,7 +840,7 @@ extension arm_gprs {
     return (framePointer & 1) == 0
   }
 
-  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
   public static func stripPtrAuth(address: Address) -> Address {
     // Is there a better way to do this?  It'd be easy if we just wanted to
     // strip for the *host*, but we might conceivably want this under other
@@ -978,7 +990,7 @@ extension arm_gprs {
     return (framePointer & 1) == 0
   }
 
-  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS)
+  #if os(macOS) || os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
   internal static var coreSymbolicationArchitecture: CSArchitecture {
     return kCSArchitectureArmV7K
   }
@@ -987,7 +999,8 @@ extension arm_gprs {
 
 // .. Darwin specifics .........................................................
 
-#if (os(macOS) || os(iOS) || os(watchOS) || os(tvOS))
+#if os(macOS) || os(iOS) || os(tvOS) || os(visionOS)
+// This is not supported on watchOS
 private func thread_get_state<T>(_ thread: thread_t,
                                  _ flavor: CInt,
                                  _ result: inout T) -> kern_return_t {

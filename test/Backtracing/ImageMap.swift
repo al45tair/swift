@@ -6,8 +6,7 @@
 // UNSUPPORTED: use_os_stdlib
 // UNSUPPORTED: back_deployment_runtime
 // REQUIRES: executable_test
-// REQUIRES: backtracing
-// REQUIRES: OS=macosx || OS=linux-gnu
+// REQUIRES: OS=macosx || OS=ios || OS=tvos || OS=watchos || OS=visionos || OS=linux-gnu
 
 import Runtime
 
@@ -23,5 +22,3 @@ struct ImageMapTest {
     print(map)
   }
 }
-
-
