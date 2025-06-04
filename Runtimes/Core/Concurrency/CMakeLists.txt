@@ -100,6 +100,15 @@ add_library(swift_Concurrency
   "${CMAKE_CURRENT_BINARY_DIR}/TaskGroup+addTask.swift"
   "${CMAKE_CURRENT_BINARY_DIR}/Task+immediate.swift")
 
+if(CMAKE_Swift_COMPILER_TARGET MATCHES "(.*-macosx?)([0-9]+(\.[0-9]*)?)")
+  set(deployment_version "${CMAKE_MATCH_2}")
+  if(deployment_version VERSION_LESS "10.15")
+    set(uprated_target "${CMAKE_MATCH_1}10.15")
+    target_compile_options(swift_Concurrency PRIVATE
+      -target "$uprated_target")
+  endif()
+endif()
+
 include(${SwiftCore_CONCURRENCY_GLOBAL_EXECUTOR}.cmake)
 target_compile_definitions(swift_Concurrency PRIVATE
   $<$<COMPILE_LANGUAGE:C,CXX>:-DSWIFT_TARGET_LIBRARY_NAME=swift_Concurrency>
