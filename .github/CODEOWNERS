@@ -89,6 +89,7 @@
 /include/swift/AST/DiagnosticsRefactoring.def      @hamishknight @rintaro
 /include/swift/AST/DiagnosticsSIL.def              @jckarter
 /include/swift/AST/Evaluator*                      @CodaFi @slavapestov
+/include/swift/AST/PlatformKinds.def               @swiftlang/platform-steering-group
 /include/swift/Basic/                              @DougGregor
 /include/swift/Basic/Features.def                  @DougGregor @hborla
 /include/swift/ClangImporter                       @egorzhdan @beccadax @ian-twilightcoder @Xazax-hun @j-hui @susmonteiro @hnrklssn
