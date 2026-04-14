@@ -316,6 +316,7 @@ elseif(SWIFT_PRIMARY_VARIANT_SDK STREQUAL "LINUX")
   endif()
 elseif(SWIFT_PRIMARY_VARIANT_SDK STREQUAL "WINDOWS")
   list(APPEND swift_core_private_link_libraries shell32;DbgHelp;Synchronization)
+  list(APPEND SWIFTLIB_SOURCES SwiftCore.rc)
 endif()
 
 if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "MinSizeRel")
